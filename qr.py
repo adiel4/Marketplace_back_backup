@@ -27,4 +27,4 @@ def generate_qr_code(data):
 def save_qr(data, c_id: int):
     key = Fernet.generate_key()
     full_data = str(c_id) + encrypt_data(data, key).decode('utf-8')
-    return {key: generate_qr_code(full_data)}
+    return {'qr_base64': generate_qr_code(full_data), 'key': key.decode('utf-8')}

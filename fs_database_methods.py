@@ -7,10 +7,14 @@ def get_client_info(c_id: int):
     sql = f"""select b_id from hp_get_basket_id({c_id})"""
     res_b_id = db_meth.get_values_sql(sql)[0]
     sql = f"""select m_id from markets where m_owner = {c_id}"""
-    res_m_id = db_meth.get_values_sql(sql)[0]
+    res_m_id = db_meth.get_values_sql(sql)
+    try:
+        res_m_id = [item.get('m_id') for item in res_m_id]
+    except Exception as e:
+        print(format(e))
     result = {**res, **res_b_id}
     if res_m_id:
-        result = {**result, **res_m_id}
+        result = {**result, **{'markets': res_m_id}}
     return result
 
 
@@ -35,3 +39,7 @@ def get_regions(reg_id: int = 1000000):
         else:
             tmp.get(tmp_parent).get("regions").append({"reg_id": item.get("id_list"), "reg_name": item.get("reg_name")})
     return result
+
+
+def get_region_name(reg_id: int):
+    return db_meth.get_values_sql(f"""select reg_name from region where reg_unicode = {reg_id}""", True)

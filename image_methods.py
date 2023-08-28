@@ -4,9 +4,37 @@ import base64
 from io import BytesIO
 import models
 from main import minio_client
+import io
+from PIL import Image
 
 
-def add_images(basket, images: list):
+def compress_image(image, desired_size):
+    original_image_io = BytesIO()
+    try:
+        image.save(original_image_io, format=image.format)
+        original_image_data = original_image_io.getvalue()
+
+        if len(original_image_data) <= desired_size * 1024:
+            return original_image_data
+
+        compression_ratio = (desired_size * 1024) / len(original_image_data)
+
+        new_width = int(image.width * compression_ratio)
+        new_height = int(image.height * compression_ratio)
+
+        compressed_image = image.resize((new_width, new_height), Image.ANTIALIAS)
+
+        compressed_image_io = BytesIO()
+        try:
+            compressed_image.save(compressed_image_io, format=image.format)
+            return compressed_image_io.getvalue()
+        finally:
+            compressed_image_io.close()
+    finally:
+        original_image_io.close()
+
+
+def add_images(basket, images: list, size: int = 300):
     is_list = True if any(not isinstance(item, models.Image) for item in images) else False
     if not is_list:
         return {'status': -1, 'err_msg': 'Invalid file type in list.'}
@@ -40,6 +68,8 @@ def add_images(basket, images: list):
         if extension is None:
             return {'status': -1, 'err_msg': 'Unable to determine file extension.'}
         try:
+            image = Image.open(BytesIO(image_data))
+            image_data = compress_image(image, size)
             minio_client.upload_file(bucket_name=basket, object_name=f'{item_id}/' + file_name,
                                      file_path=BytesIO(image_data), file_len=len(image_data))
         except Exception as err:
@@ -64,13 +94,13 @@ def edit_images(editImage: models.EditImage):
         except Exception as err:
             return {"status": -1, 'err_msg': format(err)}
         else:
-            return {"status": 0, 'err_msg': "Image succesfully updated"}
+            return {"status": 0, 'err_msg': "Image successfully updated"}
     elif operation_type == 'delete':
         try:
             minio_client.delete_file(basket, objects[-2], objects[-1])
         except Exception as err:
             return {"status": -1, 'err_msg': format(err)}
         else:
-            return {"status": 0, 'err_msg': "Image succesfully deleted"}
+            return {"status": 0, 'err_msg': "Image successfully deleted"}
     else:
         return {'status': -1, "err_msg": "Invalid operation"}

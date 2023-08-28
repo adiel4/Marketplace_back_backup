@@ -39,7 +39,7 @@ class Item(BaseModel):
     cat_id: Optional[str]
 
 
-class Image:
+class Image(BaseModel):
     item_id: int
     is_main: Optional[int]
     base64: str
@@ -50,7 +50,7 @@ class GImages(Good):
 
 
 class Basket(BaseModel):
-    b_id: int
+    b_id: Optional[int]
     g_id: int
     quantity: int
 
@@ -71,15 +71,15 @@ class Header(BaseModel):
     header: dict
 
 
-class DelGoodBasket(PrimaryKey):
+class DelGoodBasket(BaseModel):
     c_id: int
-    g_id: int
+    g_id: Optional[int]
 
 
 class Waitlist(BaseModel):
     c_id: int
     obj_kind: str
-    obj_id: int
+    obj_id_list: list
 
 
 class ImageList(BaseModel):
@@ -105,3 +105,21 @@ class MarketInfo(BaseModel):
     mi_time_open: Optional[str]
     mi_time_close: Optional[str]
     mi_atc: bool
+
+
+class MarketContacts(BaseModel):
+    m_id: int
+    contacts: List
+
+
+class ApproveAction(BaseModel):
+    id: int
+    al_id: int
+    res_status: int
+    c_id: int
+    memo: Optional[str]
+
+
+class MarketStore(BaseModel):
+    m_id: int
+    g_id: int
