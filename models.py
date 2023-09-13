@@ -20,10 +20,11 @@ class Good(BaseModel):
     m_id: int
     gi_name: Optional[str]
     gi_memo: str
-    gi_cost: float
+    gi_price: float
     status_str: Optional[str]
     status: Optional[int]
     images: List
+    gi_more_ref: Optional[str]
 
 
 class User(BaseModel):
@@ -80,6 +81,7 @@ class Waitlist(BaseModel):
     c_id: int
     obj_kind: str
     obj_id_list: list
+    wl_id: Optional[int]
 
 
 class ImageList(BaseModel):
@@ -105,6 +107,11 @@ class MarketInfo(BaseModel):
     mi_time_open: Optional[str]
     mi_time_close: Optional[str]
     mi_atc: bool
+    mi_address: Optional[str]
+    mi_latitude: Optional[str]
+    mi_longitude: Optional[str]
+    mi_from_ci_id: Optional[int]
+    city: Optional[str]
 
 
 class MarketContacts(BaseModel):
@@ -123,3 +130,24 @@ class ApproveAction(BaseModel):
 class MarketStore(BaseModel):
     m_id: int
     g_id: int
+
+
+class Deal(BaseModel):
+    d_id: Optional[int]
+    m_id: int
+    wl_id: Optional[int]
+    status: int
+    result: List
+
+
+class Client(BaseModel):
+    c_id: int
+    ci_id: int
+
+
+class WaitlistCliResult(BaseModel):
+    wl_id: int
+    m_id: int
+    results: list
+    pay_type: int
+    delivery_type: int

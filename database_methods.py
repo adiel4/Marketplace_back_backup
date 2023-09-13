@@ -1,11 +1,16 @@
 import json
 import config as cfg
+import decs
 import models
 import image_methods
 from datetime import datetime
 import methods
+import re
+from init import redis_client
+import cache_methods as ch_meth
 
 
+@decs.fdb_transaction(status=0)
 def get_values_sql(sql, is_fs: bool = False):
     con = None
     try:
@@ -81,8 +86,8 @@ def insert_item(process_name: str, item):
                                 values ('{item_code}','{item_name}',{cat_id})''')
 
 
-def get_categories():
-    value_arr = get_values_sql('select * from hp_get_categories')
+def get_categories(all_cats: bool = False):
+    value_arr = get_values_sql(f'select * from hp_get_categories({all_cats})')
     if value_arr:
         return {"categories": value_arr}
     return None
@@ -96,14 +101,19 @@ def get_subcategories(cat_id: int):
 
 
 def get_brands():
-    value_arr = get_values_sql('select * from hp_get_brands')
+    value_arr = get_values_sql('select * from hp_get_active_brands')
     if value_arr:
         return {"brands": value_arr}
     return None
 
 
 def get_good(g_id: int):
-    good_info = get_values_sql(f'select * from hp_get_good_info({g_id})')
+    sql = f'select * from hp_get_good_info({g_id})'
+    if redis_client.exists(sql):
+        good_info = ch_meth.get_cached_value(redis_client, sql)
+    else:
+        good_info = get_values_sql(sql)
+        ch_meth.set_cached_value(redis_client, good_info, sql)
     if good_info is not None and len(good_info) > 0:
         good_info = good_info[0]
     else:
@@ -114,16 +124,21 @@ def get_good(g_id: int):
     result = good_info
     if good_main_image:
         result = result.update({'good_image': good_main_image})
-
-    if result:
+    if not result:
+        return {"status": 0, "err_msg": "Указанный товар не найден"}
+    else:
         return result
-    return {"status": 0, "err_msg": "No good info found"}
 
 
-def get_goods(quantity: int, params=None):
-    if params is None:
-        params = {}
-    g_id_list = get_values_sql(f"""select * from hp_get_goods_id({quantity}, '{params}')""")
+def get_goods(quantity: int, last_id: int = 0, params: str = None):
+    sql = f"""select * from hp_get_goods_id({quantity}, {last_id}"""
+    if params:
+        sql += f""", '{params}')"""
+    else:
+        sql += ')'
+    if redis_client.exists(sql):
+        return ch_meth.get_cached_value(redis_client, sql)
+    g_id_list = get_values_sql(sql)
     if isinstance(g_id_list, dict) and g_id_list.get('status') == -1:
         return g_id_list
     if not g_id_list:
@@ -131,7 +146,7 @@ def get_goods(quantity: int, params=None):
     result = []
     for g_id in g_id_list:
         result.append(get_good(g_id.get('g_id')))
-    return result
+    return ch_meth.set_cached_value(redis_client, result, sql)
 
 
 def get_market_store(m_id: int, is_active: bool):
@@ -159,8 +174,9 @@ def get_market_store_on_mod(m_id: int):
 
 
 def add_good(good):
+    print(good)
     return get_values_sql(f"""select g_id from hp_insert_good({good.cat_id}, {good.b_id}, {good.gm_id}, 
-                            '{good.gi_memo}', {good.gi_cost},{good.m_id})""")
+                            '{good.gi_memo}', {good.gi_price}, {good.m_id}, '{good.gi_more_ref}')""")
 
 
 def del_good(pk: models.PrimaryKey):
@@ -210,9 +226,9 @@ def get_brand(b_id: int):
 
 
 def insert_new_item(item: models.NewItem):
-    if item.type == 'good_models':
+    if item.type == 'good_model':
         return insert_values(f"""execute procedure hp_insert_new_model('{item.type}', {item.body.get('cat_id')}, 
-                                {item.body.get('b_id')}, '{item.body.get('name')}', 1090101339145)""")
+                                {item.body.get('b_id')}, '{item.body.get('name')}', {item.body.get('c_id')})""")
     if item.type == 'brands':
         return insert_values(f"""execute procedure hp_insert_new_brand('{item.type}', '{item.body.get('name')}', 
                             {item.body.get('c_id')})""")
@@ -251,22 +267,17 @@ def create_waitlist(waitlist):
     obj_kind = waitlist.obj_kind
     obj_id_list = waitlist.obj_id_list
     obj_id = None
-    wl_id = None
     if len(obj_id_list) == 1:
         obj_id = obj_id_list[0]
         res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {obj_id}, '{obj_kind}')''')
         if type(res) != list:
             return {'status': -1, 'err_msg': res.get('err_msg')}
-        wl_id = res[0].get('wl_id')
     else:
         for g_id in obj_id_list:
-            res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {g_id}, '{obj_kind}', {wl_id})''')
+            res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {g_id}, '{obj_kind}')''')
             if type(res) != list:
                 return {'status': -1, 'err_msg': res.get('err_msg')}
-            if not wl_id:
-                wl_id = res[0].get('wl_id')
 
-    insert_values(f'''execute procedure hp_insert_waitlist_notification({wl_id})''')
     return {'status': 0}
 
 
@@ -286,7 +297,7 @@ def get_app_result(al_id: int):
 
 def red_good(good: models.Good):
     res = insert_values(f"""execute procedure hp_red_good_info({good.g_id}, {good.cat_id}, {good.b_id}, 
-                        '{good.gi_memo}', {good.gi_cost}, {good.gm_id})""")
+                        '{good.gi_memo}', {good.gi_price}, {good.gm_id}, '{good.gi_more_ref}')""")
     if res.get('status') != 0:
         return res
     if good.images:
@@ -310,26 +321,28 @@ def get_waitlist(c_id: int):
     result_tmp = get_values_sql(f"""select * from hp_get_waitlist({c_id})""")
     if not result_tmp or len(result_tmp) == 0:
         return []
-    result = []
-    m_id_dict = {}
-    wl_id = None
-    is_locked = None
-    mi_name = None
-    for item in result_tmp:
-        m_id = item["m_id"]
-        mi_name = item["mi_name"]
-        if m_id not in m_id_dict:
-            m_id_dict[m_id] = []
-        del item["m_id"]
-        del item["mi_name"]
-        wl_id = item.pop("wl_id")
-        is_locked = item.pop("is_locked")
-        m_id_dict[m_id].append(item)
-    content = []
-    for m_id, goods in m_id_dict.items():
-        content.append({"m_id": m_id, "mi_name": mi_name, "goods": goods})
-        result.append({"wl_id": wl_id, "is_locked": is_locked, "content": content})
-    return result
+    return result_tmp
+
+
+def get_waitlist_id(c_id: int):
+    result = get_values_sql(f"""select wl.wl_id
+    from cli_waitlist clw
+    inner join waitlist wl on wl.wl_id = clw.clw_from_wl_id
+    where clw.clw_from_c_id = {c_id} and clw.clw_is_locked = True
+    order by clw.clw_create_datetime desc
+    rows 1;""")
+    if result:
+        return result[0]
+
+
+def get_goods_by_wl_id(wl_id: int):
+    return get_values_sql(f"""select d.d_id,g.g_id,gm.gm_name,wl.wl_good_qty
+            from waitlist wl
+            inner join deals d on d.d_from_wl_id = wl.wl_id
+            inner join goods g on g.g_id = wl.wl_from_g_id
+            inner join good_info gi on g.g_from_gi_id = gi.gi_id
+            inner join good_model gm on gm.gm_id = gi.gi_from_gm_id
+            where wl.wl_id = {wl_id} and wl.wl_status = 2 and wl.wl_is_delete = False""")
 
 
 def get_waitlist_seller(wl_id: int, c_id: int):
@@ -337,7 +350,7 @@ def get_waitlist_seller(wl_id: int, c_id: int):
 
 
 def market_good_from_wl(m_id: int, g_id_string: str):
-    return get_values_sql(f"""select * from hp_get_goods_from_wait_list({m_id}, '{g_id_string}')""")
+    return get_values_sql(f"""select * from hp_get_goods_from_wait_list('{m_id}', '{g_id_string}')""")
 
 
 def get_market_info(m_id: int):
@@ -370,11 +383,23 @@ def get_market_contacts(m_id: int):
 def redact_market_info(mi: models.MarketInfo):
     working_days_indices = [str(index + 1) for index, value in enumerate(mi.mi_working_days) if value]
     result_string = ','.join(working_days_indices)
-    time_open = f'{datetime.strptime(mi.mi_time_open, "%H:%M").time()}' if mi.mi_time_open else 'null'
-    time_close = f'{datetime.strptime(mi.mi_time_close, "%H:%M").time()}' if mi.mi_time_close else 'null'
+    time_open = f'{datetime.strptime(mi.mi_time_open, "%H:%M").time()}' if mi.mi_time_open else None
+    time_close = f'{datetime.strptime(mi.mi_time_close, "%H:%M").time()}' if mi.mi_time_close else None
     m_id = mi.m_id if mi.m_id else 'null'
-    return get_values_sql(f'''select m_id from hp_red_market_info({mi.c_id}, {mi.mi_reg}, '{mi.mi_name}', 
-                            '{result_string}', {time_open}, {time_close}, {mi.mi_atc}, {m_id})''')
+    mi.mi_latitude = mi.mi_latitude if mi.mi_latitude else 'null'
+    mi.mi_longitude = mi.mi_longitude if mi.mi_longitude else 'null'
+    ci_id = mi.mi_from_ci_id
+    if not ci_id:
+        tmp = get_values_sql(f'''select * from hp_find_or_insert_city('{mi.city}')''')
+        ci_id = tmp[0].get('ci_id')
+    if time_open:
+        return get_values_sql(f'''select m_id from hp_red_market_info({mi.c_id}, {mi.mi_reg}, '{mi.mi_name}',
+                            '{result_string}', '{time_open}', '{time_close}', {mi.mi_atc}, '{mi.mi_address}',
+                            {mi.mi_latitude}, {mi.mi_longitude}, {ci_id}, {m_id})''')
+    else:
+        return get_values_sql(f'''select m_id from hp_red_market_info({mi.c_id}, {mi.mi_reg}, '{mi.mi_name}',
+                                    '{result_string}', null, null, {mi.mi_atc}, '{mi.mi_address}',
+                                    {mi.mi_latitude}, {mi.mi_longitude}, {ci_id}, {m_id})''')
 
 
 def redact_market_contacts(mc):
@@ -413,12 +438,8 @@ def redact_market_contacts(mc):
 
 
 def get_all_goods():
-    return get_values_sql(f"""  select *
-                              from goods g
-                              inner join good_info gi on gi.gi_id = g.g_from_gi_id
-                              inner join good_model gm on gi.gi_from_gm_id = gm.gm_id
-                              inner join brands b on b.b_id = g.g_from_b_id
-                              inner join categories cat on cat.cat_id = g.g_from_cat_id""")
+    return get_values_sql(f"""select g_id, gi_memo, gi_price, g_create_datetime, m_id, ci_id, mi_lat, mi_lon, 
+                                g_from_cat_id, g_from_b_id, gi_from_gm_id from hp_get_all_active_goods""")
 
 
 def create_miniapp(c_id):
@@ -435,6 +456,8 @@ def fs_approve(type_act: str, result: models.ApproveAction):
         procedure = 'hp_approve_good'
     if type_act == 'market':
         procedure = 'hp_approve_market'
+    if type_act in ['category', 'brand', 'model']:
+        procedure = 'hp_approve_sort_types'
     if procedure == '':
         return {'status': -1, 'err_msg': 'Unknown procedure'}
     return get_values_sql(f"""select * from {procedure}({result.id}, {result.al_id}, {result.res_status}, 
@@ -448,19 +471,21 @@ def get_market_status(m_id: int):
 def get_seller_good_list(c_id: int):
     brands_list = []
     cat_list = []
-
+    brands = None
+    categories = None
     markets = get_values_sql(f"""select m_id as id, name from hp_get_seller_markets({c_id})""")
     res = get_values_sql(f"""select * from hp_get_seller_good_list({c_id})""")
-    for item in res:
-        if not item.get('b_id') in brands_list:
-            brands_list.append(item.get('b_id'))
-        if not item.get('cat_id') in cat_list:
-            cat_list.append(item.get('cat_id'))
+    if res:
+        for item in res:
+            if not item.get('b_id') in brands_list:
+                brands_list.append(item.get('b_id'))
+            if not item.get('cat_id') in cat_list:
+                cat_list.append(item.get('cat_id'))
 
-    brands = get_values_sql(f"""select b_id as id, b_name as name from brands where b_id in 
-            ({', '.join(str(x) for x in brands_list)})""")
-    categories = get_values_sql(f"""select cat_id  as id, cat_name as name from categories where cat_id in 
-            ({', '.join(str(x) for x in cat_list)})""")
+        brands = get_values_sql(f"""select b_id as id, b_name as name from brands where b_id in 
+                ({', '.join(str(x) for x in brands_list)})""")
+        categories = get_values_sql(f"""select cat_id  as id, cat_name as name from categories where cat_id in 
+                ({', '.join(str(x) for x in cat_list)})""")
 
     return {'markets': markets, 'goods': res, 'brands': brands, 'categories': categories}
 
@@ -471,3 +496,75 @@ def copy_to_store(good: models.MarketStore):
 
 def get_parent_images_id(g_id: int):
     return get_values_sql(f"""select f_get_parent_img_id({g_id}, 'goods') from rdb$database""")
+
+
+def change_good_status_in_wl(params):
+    return get_values_sql(f'select * from hp_approve_good_in_waitlist(\'{params}\')', False)
+
+
+def get_city_name(ci_id: int):
+    return get_values_sql(f"""select * from hp_find_city_name({ci_id})""")
+
+
+def new_dial(deal: models.Deal):
+    res = get_values_sql(f"""select * from hp_new_deal({deal.m_id}, {deal.wl_id}, {deal.status})""")
+    d_id = res[0].get('d_id')
+    if d_id:
+        for el in deal.result:
+            insert_values(f"""execute procedure hp_new_deal_info({d_id},{el.get('g_id')},{el.get('g_qty')},
+                            {el.get('status')})""")
+        return {'status': 0}
+    else:
+        return {'status': -1}
+
+
+def parents_cats():
+    return get_values_sql("select * from hp_get_parents_cats")
+
+
+def cities():
+    return get_values_sql("select * from hp_get_cities")
+
+
+def client_city(client: models.Client):
+    try:
+        insert_values(f"""execute procedure hp_upd_ins_client_city({client.c_id}, {client.ci_id})""")
+    except Exception as err:
+        return {'status': -1, 'err_msg': format(err)}
+    return {'status': 0}
+
+
+def find_city(city_name: str):
+    if bool(re.fullmatch(r'[-а-яёА-ЯЁ]*', city_name)):
+        return get_values_sql(f'''select * from hp_find_or_insert_city('{city_name}')''')
+    else:
+        return {'status': -1, 'err_msg': 'Недопустимые символы'}
+
+
+def waitlist_client_result(result: models.WaitlistCliResult):
+    if result.results and len(result.results) > 0:
+        counter = get_values_sql(f'''select count(*) from waitlist wl where wl_id = {result.wl_id} 
+                                            and wl_status not in (2, -2)''')
+        if counter:
+            counter = counter[0].get('count')
+            if counter == 0:
+                return {'status': -1, 'err_msg': 'Все результаты уже получены'}
+            else:
+                for result_tmp in result.results:
+                    insert_values(f'''update waitlist set wl_status = {result_tmp.get('status')} 
+                                        where wl_id = {result.wl_id} and wl_from_g_id = {result_tmp.get('g_id')}''')
+                if counter == len(result.results):
+                    insert_values(f'''update cli_waitlist set clw_is_locked = true 
+                                        where(clw_from_wl_id = {result.wl_id})''')
+                d_id = get_values_sql(f"""select d_id from hp_new_deal({result.m_id}, 
+                        {result.wl_id}, 0, {result.pay_type}, {result.delivery_type})""")
+
+                if d_id and d_id[0].get('d_id') > 0:
+                    for result_tmp in result.results:
+                        insert_values(f"""execute procedure hp_new_deal_info({d_id}, {result_tmp.get('g_id')}, 
+                        {result_tmp.get('qty')}, 0)""")
+                    return {'status': 0}
+                else:
+                    return {'status': -1, 'err_msg': 'Произошла ошибка'}
+    else:
+        return {'status': -1, 'err_msg': 'Результат не может быть пустым'}

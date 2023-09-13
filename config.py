@@ -29,6 +29,13 @@ redis_port = int(os.getenv('REDIS_PORT'))
 minio_endpoint = os.getenv('MINIO_ENDPOINT')
 minio_user = os.getenv('MINIO_USER')
 minio_password = os.getenv('MINIO_PASSWORD')
+# yandex
+yandex_api_key = os.getenv('YANDEX_API_KEY')
+
+def_search_sort_types = '''{
+"date": 0,
+"price": 0
+}'''
 
 con = None
 con_fs = None

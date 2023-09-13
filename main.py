@@ -4,7 +4,6 @@ import random
 from io import BytesIO
 from uuid import uuid4
 from pyzbar.pyzbar import decode
-import redis
 import uvicorn
 from PIL import Image
 from fastapi import FastAPI
@@ -12,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.exceptions import ConnectionError
 import isolated as iso
 import cache_methods as ch_meth
-import config as cfg
 import database as db
 import database_methods as db_meth
 import fs_database_methods as fs_db_meth
@@ -20,6 +18,10 @@ import minio_client as mn_cli
 import models
 import image_methods
 import qr
+import yandex
+import geonames
+from init import redis_client
+from init import cfg
 
 app = FastAPI(
     title='Marketplace'
@@ -28,7 +30,8 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://localhost:5174",
-    "http://192.168.200.182"
+    "http://192.168.200.182",
+    "https://test-marketplace.mbulak.kg"
 ]
 
 app.add_middleware(
@@ -38,8 +41,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-
-redis_client = redis.Redis(host=cfg.redis_url, port=cfg.redis_port, db=0)
 
 minio_client = mn_cli.CustomMinio(secure=True)
 
@@ -83,6 +84,11 @@ async def get_categories():
         return ch_meth.set_cached_value(redis_client, value_arr, 'categories')
 
 
+@app.get("/all_categories")
+async def get_categories():
+    return db_meth.get_categories(True)
+
+
 @app.get("/brands")
 async def get_brands():
     if redis_client.exists('brands'):
@@ -117,8 +123,8 @@ async def get_good(g_id: int):
 
 
 @app.get("/get_goods")
-async def get_goods(quantity: int, params: dict = None):
-    return db_meth.get_goods(quantity, params)
+async def get_goods(quantity: int, last_id: int = 0, params: str = None):
+    return db_meth.get_goods(quantity, last_id, params)
 
 
 @app.post('/add_good')
@@ -137,7 +143,7 @@ async def add_good(good: models.Good):
     else:
         redis_client.delete('goods')
         iso.get_goods_cache()
-        return result
+        return {'status': 0}
 
 
 @app.post('/del_good')
@@ -164,6 +170,11 @@ async def get_good_images(g_id: int, only_main: int):
 @app.get("/get_market_images")
 async def get_market_images(m_id: int, only_main: int):
     return minio_client.get_goods_images(m_id, only_main, 'markets')
+
+
+@app.get("/get_cat_brand_images")
+async def get_cat_brand_images(m_id: int, only_main: int, req_type: str):
+    return minio_client.get_goods_images(m_id, only_main, req_type)
 
 
 @app.post("/edit_good_images")
@@ -327,7 +338,7 @@ async def create_qr(c_id: int):
                 ch_meth.get_cached_value(redis_client, f'c_id:{c_id}:qr').items()}
     data = None
     try:
-        data = db_meth.get_waitlist(c_id)
+        data = db_meth.get_waitlist_id(c_id)
     except Exception as err:
         print(err)
     if data is None:
@@ -345,7 +356,7 @@ async def create_qr(c_id: int):
 async def scan_qr(operation_type: str, data: str, m_id: int):
     encrypted_data = None
     cli_c = None
-    if operation_type == 'qr_code':
+    if operation_type.lower() == 'qr_code':
         if redis_client.exists(f'qr_code:{int(data)}:qr'):
             decrypt_data = ch_meth.get_cached_value(redis_client, f'qr_code:{int(data)}:qr')
             data = decrypt_data['qr_base64']
@@ -363,7 +374,7 @@ async def scan_qr(operation_type: str, data: str, m_id: int):
             encrypted_data = data[13:]
         else:
             return {'status': -1, 'err_msg': "Unknown QR"}
-    elif operation_type == "qr":
+    elif operation_type.lower() == "qr":
         try:
             cli_c = int(data[:13])
             encrypted_data = data[13:]
@@ -385,16 +396,24 @@ async def scan_qr(operation_type: str, data: str, m_id: int):
     except Exception as err:
         print(err)
     datalist = json.loads(value.replace("'", "\""))
-    g_id_values = [int(item['g_id']) for item in datalist]
+    wl_id = datalist.get('wl_id')
+    g_id_data = db_meth.get_goods_by_wl_id(wl_id)
+    if g_id_data is None:
+        return {'status': -1, 'err_msg': "No goods in Waitlist"}
+    g_id_values = [int(item['g_id']) for item in g_id_data]
     g_id_string = ','.join([str(item) for item in g_id_values])
     market_goods = db_meth.market_good_from_wl(m_id, g_id_string)
     if market_goods is None:
         return {'status': -1, 'err_msg': "No goods for client"}
     else:
+        d_id = g_id_data[0].get('d_id')
+        result = {'wl_id': datalist.get('wl_id'), 'd_id': d_id, 'goods': []}
         for good in market_goods:
-            good['g_name'] = datalist[g_id_values.index(good['g_id'])]['g_name']
-            good['g_qty'] = datalist[g_id_values.index(good['g_id'])]['g_qty']
-        return market_goods
+            g_name = g_id_data[g_id_values.index(good.get('g_id'))].get('gm_name')
+            g_qty = g_id_data[g_id_values.index(good.get('g_id'))].get('wl_good_qty')
+            good = {'g_id': good.get('g_id'), 'g_name': g_name, 'g_qty': g_qty}
+            result.get('goods').append(good)
+        return result
 
 
 @app.get("/get_market_info")
@@ -494,13 +513,24 @@ async def get_cached_good():
 
 
 @app.get('/search_goods')
-async def search_in_goods(query: str = None, cat_ids: str = None, b_ids: str = None):
+async def search_in_goods(sort_types: str = cfg.def_search_sort_types, search_query=None, cat_ids: str = None,
+                          b_ids: str = None, gm_ids: str = None, price: str = None, points: str = None,
+                          ci_id: int = None):
+    if price:
+        price = json.loads(price)
     dataframe = iso.get_goods_cache()
+    if sort_types is not None:
+        sort_types = json.loads(sort_types)
+    if points is not None:
+        points = json.loads(points)
     if cat_ids is not None:
         cat_ids = [int(i) for i in cat_ids.split(',')]
     if b_ids is not None:
         b_ids = [int(j) for j in b_ids.split(',')]
-    return iso.search_dataframe(query, cat_ids, b_ids, dataframe)
+    if gm_ids is not None:
+        gm_ids = [int(k) for k in gm_ids.split(',')]
+    return iso.search_dataframe(sort_options=sort_types, query=search_query, cat_ids=cat_ids, b_ids=b_ids,
+                                gm_ids_arr=gm_ids, price=price, dataframe=dataframe, points=points, ci_id=ci_id)
 
 
 @app.post("/copy_to_store")
@@ -511,6 +541,57 @@ async def copy_to_store(good: models.MarketStore):
 @app.get("/get_parent_images_id")
 async def get_parent_images_id(g_id: int):
     return db_meth.get_parent_images_id(g_id)
+
+
+@app.post("/get_address")
+async def get_address(coordinates: list):
+    return yandex.get_address(coordinates)
+
+
+@app.get("/get_city_name")
+async def get_city_name(ci_id: int):
+    return db_meth.get_city_name(ci_id)
+
+
+@app.post('/set_good_status_in_wl')
+async def set_good_status_in_wl(params: dict = None):
+    if params:
+        return db_meth.change_good_status_in_wl(str(params).replace("'", '"'))
+
+
+@app.post("/new_deal")
+async def new_dial(deal: models.Deal):
+    return db_meth.new_dial(deal)
+
+
+@app.get("/parents_cats")
+async def parents_cats():
+    return db_meth.parents_cats()
+
+
+@app.get("/cities")
+async def cities():
+    return db_meth.cities()
+
+
+@app.get("/get_current_city_geonames")
+async def current_city_geonames(lat: float, lng: float):
+    return geonames.get_place_name_by_coordinates(lat, lng)
+
+
+@app.post("/client_city")
+async def client_city(client: models.Client):
+    return db_meth.client_city(client)
+
+
+@app.get("/find_city")
+async def find_city(city_name: str):
+    return db_meth.find_city(city_name)
+
+
+@app.post("/waitlist_client_result")
+async def waitlist_client_result(result: models.WaitlistCliResult):
+    return db_meth.waitlist_client_result(result)
 
 
 if __name__ == '__main__':

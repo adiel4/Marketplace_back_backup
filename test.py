@@ -1,2 +1,6 @@
-a= '1,2,3,4,5'
-print([int(i) for i in a.split(',')])
+
+a = 5
+
+b = 6
+
+print(type((a,b)))

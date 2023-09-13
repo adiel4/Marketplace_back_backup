@@ -8,11 +8,16 @@ def get_client_info(c_id: int):
     res_b_id = db_meth.get_values_sql(sql)[0]
     sql = f"""select m_id from markets where m_owner = {c_id}"""
     res_m_id = db_meth.get_values_sql(sql)
+    sql = f"""select c_from_ci_id from clients where c_id = {c_id}"""
+    res_ci_id = db_meth.get_values_sql(sql)
     try:
         res_m_id = [item.get('m_id') for item in res_m_id]
     except Exception as e:
         print(format(e))
     result = {**res, **res_b_id}
+    if res_ci_id:
+        res_ci_id = res_ci_id[0]
+        result = {**result, **res_ci_id}
     if res_m_id:
         result = {**result, **{'markets': res_m_id}}
     return result
