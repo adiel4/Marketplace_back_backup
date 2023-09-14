@@ -1,6 +1,2 @@
-
-a = 5
-
-b = 6
-
-print(type((a,b)))
+a = '16'
+print([int(i) for i in a.replace('[','').replace(']','').split(',')])

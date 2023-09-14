@@ -1,3 +1,4 @@
+import datetime
 import json
 from datetime import timedelta
 
@@ -26,4 +27,8 @@ def set_cached_value_by_days(redis_client: redis.Redis, value_arr, name: str, ex
 def decimal_encoder(obj):
     if isinstance(obj, decimal.Decimal):
         return str(obj)  # Convert Decimal to string representation
-    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+    elif isinstance(obj, datetime.date):
+        return str(obj)
+    elif isinstance(obj, datetime.datetime):
+        return str(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable.{obj}")

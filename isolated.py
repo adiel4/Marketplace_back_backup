@@ -1,5 +1,4 @@
 import json
-import pickle
 import database_methods as db_mth
 import fs_database_methods as fs_dm
 import pandas as pd
@@ -64,6 +63,8 @@ def search_dataframe(sort_options=None, query=None, cat_ids=None, b_ids=None, gm
     if gm_ids_arr:
         filtered_df = filtered_df[filtered_df['gi_from_gm_id'].isin(gm_ids_arr)]
 
+    filtered_df["gi_price"] = filtered_df["gi_price"].astype(float)
+
     if isinstance(price, dict):
         min_price = price.get('low_price')
         if not min_price:
@@ -74,6 +75,13 @@ def search_dataframe(sort_options=None, query=None, cat_ids=None, b_ids=None, gm
                                       (filtered_df['gi_price'] <= max_price)]
         else:
             filtered_df = filtered_df[(filtered_df['gi_price'] >= min_price)]
+
+    if points:
+        filtered_df['distance'] = filtered_df.apply(
+            lambda row: methods.calculating_distance((float(row.get('mi_lat')), float(row.get('mi_lon'))),
+                                                     (float(points.get('lat')),
+                                                      float(points.get('lon')))), axis=1)
+
     if query:
         if isinstance(query, str):
             query = query.lower()
@@ -84,18 +92,11 @@ def search_dataframe(sort_options=None, query=None, cat_ids=None, b_ids=None, gm
     else:
         results = filtered_df.to_dict(orient='records')
 
-    if points:
-        filtered_df['distance'] = filtered_df.apply(
-            lambda row: methods.calculating_distance((float(row.get('mi_lat')), float(row.get('mi_lon'))),
-                                                     (float(points.get('lat')),
-                                                      float(points.get('lon')))), axis=1)
-        results = filtered_df.sort_values(by='distance', ascending=True)
-
+    # Apply sorting options
     if sort_options:
-        if sort_options.get('price'):
-            results = filtered_df.sort_values(by='gi_price', ascending=sort_options.get('price'))
-        if sort_options.get('date'):
-            results = filtered_df.sort_values(by='g_create_datetime', ascending=sort_options.get('date'))
+        if sort_options.get('price') is not None:
+            results = sorted(results, key=lambda x: x['gi_price'], reverse=not sort_options['price'])
+        if sort_options.get('date') is not None:
+            results = sorted(results, key=lambda x: x['g_create_datetime'], reverse=not sort_options['date'])
 
-        results = filtered_df.to_dict(orient='records')
     return results

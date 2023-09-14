@@ -1,6 +1,5 @@
 import json
 import config as cfg
-import decs
 import models
 import image_methods
 from datetime import datetime
@@ -10,7 +9,6 @@ from init import redis_client
 import cache_methods as ch_meth
 
 
-@decs.fdb_transaction(status=0)
 def get_values_sql(sql, is_fs: bool = False):
     con = None
     try:
@@ -438,7 +436,7 @@ def redact_market_contacts(mc):
 
 
 def get_all_goods():
-    return get_values_sql(f"""select g_id, gi_memo, gi_price, g_create_datetime, m_id, ci_id, mi_lat, mi_lon, 
+    return get_values_sql(f"""select g_id, gm_name, cat_name, b_name, gi_memo, gi_price, g_create_datetime, m_id, ci_id, mi_lat, mi_lon, 
                                 g_from_cat_id, g_from_b_id, gi_from_gm_id from hp_get_all_active_goods""")
 
 
@@ -506,16 +504,16 @@ def get_city_name(ci_id: int):
     return get_values_sql(f"""select * from hp_find_city_name({ci_id})""")
 
 
-def new_dial(deal: models.Deal):
-    res = get_values_sql(f"""select * from hp_new_deal({deal.m_id}, {deal.wl_id}, {deal.status})""")
-    d_id = res[0].get('d_id')
-    if d_id:
-        for el in deal.result:
-            insert_values(f"""execute procedure hp_new_deal_info({d_id},{el.get('g_id')},{el.get('g_qty')},
-                            {el.get('status')})""")
-        return {'status': 0}
-    else:
-        return {'status': -1}
+def seller_answer_deal(deal: models.Deal):
+    try:
+        insert_values(f"""update deals set d_status = {deal.status} where (d_id = {deal.d_id})""")
+        for good in deal.result:
+            insert_values(f"""update deal_info set di_good_qty = {good.get('g_qty')}, 
+                        di_seller_status = {good.get('status')} where(di_from_d_id= {deal.d_id} and 
+                        di_from_g_id = {good.get('g_id')})""")
+    except Exception as err:
+        return {'status': -1, 'err_msg': format(err)}
+    return {'status': 0}
 
 
 def parents_cats():
@@ -560,11 +558,50 @@ def waitlist_client_result(result: models.WaitlistCliResult):
                         {result.wl_id}, 0, {result.pay_type}, {result.delivery_type})""")
 
                 if d_id and d_id[0].get('d_id') > 0:
+                    d_id = d_id[0].get('d_id')
                     for result_tmp in result.results:
                         insert_values(f"""execute procedure hp_new_deal_info({d_id}, {result_tmp.get('g_id')}, 
                         {result_tmp.get('qty')}, 0)""")
+
                     return {'status': 0}
                 else:
                     return {'status': -1, 'err_msg': 'Произошла ошибка'}
     else:
         return {'status': -1, 'err_msg': 'Результат не может быть пустым'}
+
+
+def client_deal(c_id: int):
+    res = get_values_sql(f"""select * from hp_client_deal({c_id})""")
+    print(res)
+    if not res:
+        return None
+    result = []
+
+    d_id_dict = {}
+
+    for item in res:
+        d_id = item['d_id']
+        m_id = item['m_id']
+        goods_info = {'g_id': item['g_id'], 'g_qty': item['g_qty'], 'seller_status': item['seller_status'],
+                      'client_status': item['client_status']}
+
+        if d_id not in d_id_dict:
+            d_id_dict[d_id] = {}
+
+        if 'markets' not in d_id_dict[d_id]:
+            d_id_dict[d_id]['markets'] = {}
+
+        if m_id not in d_id_dict[d_id]['markets']:
+            d_id_dict[d_id]['markets'][m_id] = {'goods': []}
+
+        d_id_dict[d_id]['markets'][m_id]['goods'].append(goods_info)
+
+    for d_id, d_info in d_id_dict.items():
+        transformed_item = {'d_id': d_id, 'markets': []}
+
+        for m_id, m_info in d_info['markets'].items():
+            market_info = {'m_id': m_id, 'goods': m_info['goods']}
+            transformed_item['markets'].append(market_info)
+
+        result.append(transformed_item)
+    return result

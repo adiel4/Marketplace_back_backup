@@ -189,7 +189,11 @@ async def add_good_images(good_images: list):
 
 @app.get("/get_categories_levels")
 async def get_categories_levels():
-    return db_meth.get_categories_levels()
+    if redis_client.exists('cat_levels'):
+        return ch_meth.get_cached_value(redis_client, 'cat_levels')
+    value_arr = db_meth.get_categories_levels()
+    if value_arr:
+        return ch_meth.set_cached_value(redis_client, value_arr, 'cat_levels')
 
 
 @app.post('/user_token')
@@ -207,7 +211,11 @@ async def get_user_token(user: models.User):
 
 @app.get('/user_info')
 async def user_info(c_id: int):
-    return fs_db_meth.get_client_info(c_id)
+    if redis_client.exists(f'user_info:{c_id}'):
+        return ch_meth.get_cached_value(redis_client, f'user_info:{c_id}')
+    value = fs_db_meth.get_client_info(c_id)
+    if value:
+        return ch_meth.set_cached_value_by_days(redis_client, value, f'user_info:{c_id}', expire_days=1)
 
 
 @app.post('/add_good_to_basket')
@@ -235,7 +243,11 @@ async def get_brand(b_id: int):
 
 @app.get("/get_models")
 async def get_models(cat_id: int = 0, b_id: int = 0):
-    return db_meth.get_models(cat_id, b_id)
+    if redis_client.exists(f'model:{cat_id}:{b_id}'):
+        return ch_meth.get_cached_value(redis_client, f'model:{cat_id}:{b_id}')
+    value = db_meth.get_models(cat_id, b_id)
+    if value:
+        return ch_meth.set_cached_value(redis_client, value, f'model:{cat_id}:{b_id}')
 
 
 @app.post("/insert_new_item")
@@ -322,7 +334,11 @@ async def read_notification(notification: models.Notifications):
 
 @app.get("/get_regions")
 async def get_regions(reg_id: int = 1000000):
-    return fs_db_meth.get_regions(reg_id)
+    if redis_client.exists(f'reg_id:{reg_id}'):
+        return ch_meth.get_cached_value(redis_client, f'reg_id:{reg_id}')
+    value = fs_db_meth.get_regions(reg_id)
+    if value:
+        return ch_meth.set_cached_value(redis_client, value, f'reg_id:{reg_id}')
 
 
 @app.post("/create_miniapp")
@@ -446,7 +462,11 @@ async def redact_market_contacts(mc: models.MarketContacts):
 
 @app.get("/get_region_name")
 async def get_region_name(reg_id: int):
-    return fs_db_meth.get_region_name(reg_id)
+    if redis_client.exists(f'reg_name:{reg_id}'):
+        return ch_meth.get_cached_value(redis_client, f'reg_name:{reg_id}')
+    value = fs_db_meth.get_region_name(reg_id)
+    if value:
+        return ch_meth.set_cached_value(redis_client, value, f'reg_name:{reg_id}')
 
 
 @app.post("/create_waitlist")
@@ -524,11 +544,11 @@ async def search_in_goods(sort_types: str = cfg.def_search_sort_types, search_qu
     if points is not None:
         points = json.loads(points)
     if cat_ids is not None:
-        cat_ids = [int(i) for i in cat_ids.split(',')]
+        cat_ids = [int(i) for i in cat_ids.replace('[', '').replace(']', '').split(',')]
     if b_ids is not None:
-        b_ids = [int(j) for j in b_ids.split(',')]
+        b_ids = [int(i) for i in b_ids.replace('[', '').replace(']', '').split(',')]
     if gm_ids is not None:
-        gm_ids = [int(k) for k in gm_ids.split(',')]
+        gm_ids = [int(i) for i in gm_ids.replace('[', '').replace(']', '').split(',')]
     return iso.search_dataframe(sort_options=sort_types, query=search_query, cat_ids=cat_ids, b_ids=b_ids,
                                 gm_ids_arr=gm_ids, price=price, dataframe=dataframe, points=points, ci_id=ci_id)
 
@@ -550,7 +570,11 @@ async def get_address(coordinates: list):
 
 @app.get("/get_city_name")
 async def get_city_name(ci_id: int):
-    return db_meth.get_city_name(ci_id)
+    if redis_client.exists(f'city_name:{ci_id}'):
+        return ch_meth.get_cached_value(redis_client, f'city_name:{ci_id}')
+    value_arr = db_meth.get_city_name(ci_id)
+    if value_arr:
+        return ch_meth.set_cached_value(redis_client, value_arr, f'city_name:{ci_id}')
 
 
 @app.post('/set_good_status_in_wl')
@@ -559,19 +583,27 @@ async def set_good_status_in_wl(params: dict = None):
         return db_meth.change_good_status_in_wl(str(params).replace("'", '"'))
 
 
-@app.post("/new_deal")
-async def new_dial(deal: models.Deal):
-    return db_meth.new_dial(deal)
+@app.post("/seller_answer_deal")
+async def seller_answer_deal(deal: models.Deal):
+    return db_meth.seller_answer_deal(deal)
 
 
 @app.get("/parents_cats")
 async def parents_cats():
-    return db_meth.parents_cats()
+    if redis_client.exists('parents_cats'):
+        return ch_meth.get_cached_value(redis_client, 'parents_cats')
+    value_arr = db_meth.parents_cats()
+    if value_arr:
+        return ch_meth.set_cached_value(redis_client, value_arr, 'parents_cats')
 
 
 @app.get("/cities")
 async def cities():
-    return db_meth.cities()
+    if redis_client.exists('cities'):
+        return ch_meth.get_cached_value(redis_client, 'cities')
+    value_arr = db_meth.cities()
+    if value_arr:
+        return ch_meth.set_cached_value(redis_client, value_arr, 'cities')
 
 
 @app.get("/get_current_city_geonames")
@@ -592,6 +624,11 @@ async def find_city(city_name: str):
 @app.post("/waitlist_client_result")
 async def waitlist_client_result(result: models.WaitlistCliResult):
     return db_meth.waitlist_client_result(result)
+
+
+@app.get("/get_client_deal")
+async def client_deal(c_id: int):
+    return db_meth.client_deal(c_id)
 
 
 if __name__ == '__main__':
