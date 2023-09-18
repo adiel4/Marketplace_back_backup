@@ -136,7 +136,7 @@ class Deal(BaseModel):
     d_id: Optional[int]
     m_id: int
     wl_id: Optional[int]
-    status: int
+    status: Optional[int]
     result: List
 
 
@@ -147,7 +147,16 @@ class Client(BaseModel):
 
 class WaitlistCliResult(BaseModel):
     wl_id: int
-    m_id: int
+    m_id: Optional[int]
     results: list
     pay_type: int
     delivery_type: int
+
+
+class Rait(BaseModel):
+    r_id: Optional[int]
+    c_id: int
+    rait_type: str
+    id: int
+    rait: int
+    review: Optional[str]

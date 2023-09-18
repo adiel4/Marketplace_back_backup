@@ -7,6 +7,7 @@ import methods
 import re
 from init import redis_client
 import cache_methods as ch_meth
+from collections import defaultdict
 
 
 def get_values_sql(sql, is_fs: bool = False):
@@ -319,28 +320,38 @@ def get_waitlist(c_id: int):
     result_tmp = get_values_sql(f"""select * from hp_get_waitlist({c_id})""")
     if not result_tmp or len(result_tmp) == 0:
         return []
-    return result_tmp
+    transformed_data = defaultdict(lambda: defaultdict(list))
+
+    for item in result_tmp:
+        wl_id = item.get('wl_id', None)
+        m_id = item.get('m_id', None)
+        is_locked = item.get('is_locked', None)
+
+        if wl_id is not None and m_id is not None:
+            transformed_data[(wl_id, is_locked)][m_id].append(item)
+
+    output = []
+    keys = ['m_id', 'wl_id', 'mi_name', 'is_locked']
+    for (wl_id, is_locked), markets_data in transformed_data.items():
+        markets = []
+        for m_id, goods in markets_data.items():
+            mi_name = goods[0].get('mi_name', None)
+            for good in goods:
+                for key in keys:
+                    good.pop(key, None)
+            markets.append({'m_id': m_id, 'mi_name': mi_name, 'goods': goods})
+        output.append({'wl_id': wl_id, 'is_locked': is_locked, 'markets': markets})
+    return output
 
 
 def get_waitlist_id(c_id: int):
-    result = get_values_sql(f"""select wl.wl_id
-    from cli_waitlist clw
-    inner join waitlist wl on wl.wl_id = clw.clw_from_wl_id
-    where clw.clw_from_c_id = {c_id} and clw.clw_is_locked = True
-    order by clw.clw_create_datetime desc
-    rows 1;""")
+    result = get_values_sql(f"""select * from hp_get_waitlist_id({c_id});""")
     if result:
         return result[0]
 
 
 def get_goods_by_wl_id(wl_id: int):
-    return get_values_sql(f"""select d.d_id,g.g_id,gm.gm_name,wl.wl_good_qty
-            from waitlist wl
-            inner join deals d on d.d_from_wl_id = wl.wl_id
-            inner join goods g on g.g_id = wl.wl_from_g_id
-            inner join good_info gi on g.g_from_gi_id = gi.gi_id
-            inner join good_model gm on gm.gm_id = gi.gi_from_gm_id
-            where wl.wl_id = {wl_id} and wl.wl_status = 2 and wl.wl_is_delete = False""")
+    return get_values_sql(f"""select * from hp_get_good_by_wl_id({wl_id})""")
 
 
 def get_waitlist_seller(wl_id: int, c_id: int):
@@ -506,11 +517,20 @@ def get_city_name(ci_id: int):
 
 def seller_answer_deal(deal: models.Deal):
     try:
-        insert_values(f"""update deals set d_status = {deal.status} where (d_id = {deal.d_id})""")
         for good in deal.result:
             insert_values(f"""update deal_info set di_good_qty = {good.get('g_qty')}, 
                         di_seller_status = {good.get('status')} where(di_from_d_id= {deal.d_id} and 
                         di_from_g_id = {good.get('g_id')})""")
+        counter = get_values_sql(f"""select count(*) from deal_info di where di.di_from_d_id = {deal.d_id} and 
+            di.di_seller_status = 0""")
+        if counter[0].get('count') == 0:
+            counter = get_values_sql(f"""select count(*) from deal_info di where di.di_from_d_id = 26 and 
+                                    di.di_seller_status > -2""")
+            if counter[0].get('count') > 0:
+                status = 1
+            else:
+                status = -1
+            insert_values(f"""update deals set d_status = {status} where (d_id = {deal.d_id})""")
     except Exception as err:
         return {'status': -1, 'err_msg': format(err)}
     return {'status': 0}
@@ -554,8 +574,8 @@ def waitlist_client_result(result: models.WaitlistCliResult):
                 if counter == len(result.results):
                     insert_values(f'''update cli_waitlist set clw_is_locked = true 
                                         where(clw_from_wl_id = {result.wl_id})''')
-                d_id = get_values_sql(f"""select d_id from hp_new_deal({result.m_id}, 
-                        {result.wl_id}, 0, {result.pay_type}, {result.delivery_type})""")
+                d_id = get_values_sql(f"""select d_id from hp_new_deal({result.wl_id}, 0, {result.pay_type}, 
+                                    {result.delivery_type})""")
 
                 if d_id and d_id[0].get('d_id') > 0:
                     d_id = d_id[0].get('d_id')
@@ -572,7 +592,6 @@ def waitlist_client_result(result: models.WaitlistCliResult):
 
 def client_deal(c_id: int):
     res = get_values_sql(f"""select * from hp_client_deal({c_id})""")
-    print(res)
     if not res:
         return None
     result = []
@@ -605,3 +624,26 @@ def client_deal(c_id: int):
 
         result.append(transformed_item)
     return result
+
+
+def post_review(review: models.Rait):
+    return insert_values(f"""execute procedure hp_post_review({review.c_id}, '{review.rait_type}', {review.id}, 
+                    {review.rait}, '{review.review}')""")
+
+
+def get_market_rait(m_id: int):
+    sql = f"""select rait from hp_get_market_rait({m_id})"""
+    if redis_client.exists(sql):
+        return ch_meth.get_cached_value(redis_client, sql)
+    value = get_values_sql(sql)
+    if value:
+        return ch_meth.set_cached_value_by_minutes(redis_client, value, sql, 15)
+
+
+def get_reviews(obj_id: int, table_name: str):
+    sql = f"""select * from hp_get_reviews({obj_id}, '{table_name}')"""
+    if redis_client.exists(sql):
+        return ch_meth.get_cached_value(redis_client, sql)
+    value = get_values_sql(sql)
+    if value:
+        return ch_meth.set_cached_value_by_minutes(redis_client, value, sql, 15)

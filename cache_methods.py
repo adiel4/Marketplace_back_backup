@@ -24,6 +24,12 @@ def set_cached_value_by_days(redis_client: redis.Redis, value_arr, name: str, ex
     return value_arr
 
 
+def set_cached_value_by_minutes(redis_client: redis.Redis, value_arr, name: str, expire_minutes: int):
+    value_str = json.dumps(value_arr, default=decimal_encoder)
+    redis_client.set(name, value_str, ex=timedelta(minutes=expire_minutes))
+    return value_arr
+
+
 def decimal_encoder(obj):
     if isinstance(obj, decimal.Decimal):
         return str(obj)  # Convert Decimal to string representation

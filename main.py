@@ -86,7 +86,11 @@ async def get_categories():
 
 @app.get("/all_categories")
 async def get_categories():
-    return db_meth.get_categories(True)
+    if redis_client.exists('all_categories'):
+        return ch_meth.get_cached_value(redis_client, 'all_categories')
+    value_arr = db_meth.get_categories(True)
+    if value_arr:
+        return ch_meth.set_cached_value(redis_client, value_arr, 'all_categories')
 
 
 @app.get("/brands")
@@ -544,11 +548,11 @@ async def search_in_goods(sort_types: str = cfg.def_search_sort_types, search_qu
     if points is not None:
         points = json.loads(points)
     if cat_ids is not None:
-        cat_ids = [int(i) for i in cat_ids.replace('[', '').replace(']', '').split(',')]
+        cat_ids = [int(x) for x in cat_ids.split(',')]
     if b_ids is not None:
-        b_ids = [int(i) for i in b_ids.replace('[', '').replace(']', '').split(',')]
+        b_ids = [int(i) for i in b_ids.split(',')]
     if gm_ids is not None:
-        gm_ids = [int(i) for i in gm_ids.replace('[', '').replace(']', '').split(',')]
+        gm_ids = [int(k) for k in gm_ids.split(',')]
     return iso.search_dataframe(sort_options=sort_types, query=search_query, cat_ids=cat_ids, b_ids=b_ids,
                                 gm_ids_arr=gm_ids, price=price, dataframe=dataframe, points=points, ci_id=ci_id)
 
@@ -631,12 +635,27 @@ async def client_deal(c_id: int):
     return db_meth.client_deal(c_id)
 
 
+@app.post("/post_review")
+async def post_review(review: models.Rait):
+    return db_meth.post_review(review)
+
+
+@app.get("/get_market_rait")
+async def get_market_rait(m_id: int):
+    return db_meth.get_market_rait(m_id)
+
+
+@app.get("/get_reviews")
+async def get_reviews(obj_id: int, table_name: str):
+    return db_meth.get_reviews(obj_id, table_name)
+
+
 if __name__ == '__main__':
     cfg.con = db.Database().con
     cfg.con_fs = db.FSDatabase().con
-    if not cfg.con_fs:
-        print("Cannot connect to FS_DB")
-        exit()
+    # if not cfg.con_fs:
+    #     print("Cannot connect to FS_DB")
+    #     exit()
     if cfg.con:
         if not minio_client.check_health():
             print('Error while connecting to minio')
