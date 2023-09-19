@@ -467,6 +467,8 @@ def fs_approve(type_act: str, result: models.ApproveAction):
         procedure = 'hp_approve_market'
     if type_act in ['category', 'brand', 'model']:
         procedure = 'hp_approve_sort_types'
+    if type_act == 'review':
+        procedure = 'hp_approve_review'
     if procedure == '':
         return {'status': -1, 'err_msg': 'Unknown procedure'}
     return get_values_sql(f"""select * from {procedure}({result.id}, {result.al_id}, {result.res_status}, 
@@ -647,3 +649,33 @@ def get_reviews(obj_id: int, table_name: str):
     value = get_values_sql(sql)
     if value:
         return ch_meth.set_cached_value_by_minutes(redis_client, value, sql, 15)
+
+
+def get_deals_history(c_id: int, params: str = None):
+    sql = f"""select * from hp_get_deals_history({c_id}, '{params}')"""
+    if redis_client.exists(sql):
+        return ch_meth.get_cached_value(redis_client, sql)
+    value = get_values_sql(sql)
+    d_id_list = []
+    result = []
+    for deal in value:
+        d_id = deal.get('d_id')
+        if d_id not in d_id_list:
+            d_id_list.append(d_id)
+            result.append({"d_id": deal.get("d_id"), "d_datetime": deal.get("d_datetime"),
+                           "d_delivery_type": deal.get("d_delivery_type"), "delivery_str": deal.get("delivery_str"),
+                           "d_pay_type": deal.get("d_pay_type"), "pay_str": deal.get("pay_str"),
+                           "goods": [{"g_id": deal.get("g_id"), "qty": deal.get("di_good_qty"),
+                                      "hist_price": deal.get("hist_price")}]})
+        else:
+            for res in result:
+                if res.get("d_id") == d_id:
+                    res.get("goods").append({"g_id": deal.get("g_id"), "qty": deal.get("di_good_qty"),
+                                             "hist_price": deal.get("hist_price")})
+                    break
+    if value:
+        return ch_meth.set_cached_value_by_minutes(redis_client, result, sql, 15)
+
+
+def client_answer_deal(deal):
+    return None

@@ -592,6 +592,11 @@ async def seller_answer_deal(deal: models.Deal):
     return db_meth.seller_answer_deal(deal)
 
 
+@app.post("/client_answer_deal")
+async def client_answer_deal(deal: models.Deal):
+    return db_meth.client_answer_deal(deal)
+
+
 @app.get("/parents_cats")
 async def parents_cats():
     if redis_client.exists('parents_cats'):
@@ -650,12 +655,17 @@ async def get_reviews(obj_id: int, table_name: str):
     return db_meth.get_reviews(obj_id, table_name)
 
 
+@app.get("/get_deals_history")
+async def get_deals_history(c_id: int, params: str = None):
+    return db_meth.get_deals_history(c_id, params)
+
+
 if __name__ == '__main__':
     cfg.con = db.Database().con
     cfg.con_fs = db.FSDatabase().con
-    # if not cfg.con_fs:
-    #     print("Cannot connect to FS_DB")
-    #     exit()
+    if not cfg.con_fs:
+        print("Cannot connect to FS_DB")
+        exit()
     if cfg.con:
         if not minio_client.check_health():
             print('Error while connecting to minio')
