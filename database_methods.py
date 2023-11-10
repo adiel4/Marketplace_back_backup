@@ -1,5 +1,5 @@
 import json
-import config as cfg
+from init import app
 import models
 import image_methods
 from datetime import datetime
@@ -14,9 +14,9 @@ def get_values_sql(sql, is_fs: bool = False):
     con = None
     try:
         if is_fs:
-            con = cfg.con_fs
+            con = app.con_fs
         else:
-            con = cfg.con
+            con = app.con
         cur = con.cursor()
         cur.execute(sql)
         column_names = [desc[0] for desc in cur.description]
@@ -42,7 +42,7 @@ def insert_values(sql):
     err_msg = None
     con = None
     try:
-        con = cfg.con
+        con = app.con
         cur = con.cursor()
         cur.execute(sql)
     except Exception as err:
@@ -86,21 +86,21 @@ def insert_item(process_name: str, item):
 
 
 def get_categories(all_cats: bool = False):
-    value_arr = get_values_sql(f'select * from hp_get_categories({all_cats})')
+    value_arr = ch_meth.set_or_get_cached_sql(f'select * from hp_get_categories({all_cats})', 15)
     if value_arr:
         return {"categories": value_arr}
     return None
 
 
 def get_subcategories(cat_id: int):
-    value_arr = get_values_sql(f'select * from hp_get_subcategories({cat_id})')
+    value_arr = ch_meth.set_or_get_cached_sql(f'select * from hp_get_subcategories({cat_id})', 15)
     if value_arr:
         return {"subcategories": value_arr}
     return None
 
 
 def get_brands():
-    value_arr = get_values_sql('select * from hp_get_active_brands')
+    value_arr = ch_meth.set_or_get_cached_sql('select * from hp_get_active_brands', 15)
     if value_arr:
         return {"brands": value_arr}
     return None
@@ -108,11 +108,7 @@ def get_brands():
 
 def get_good(g_id: int):
     sql = f'select * from hp_get_good_info({g_id})'
-    if redis_client.exists(sql):
-        good_info = ch_meth.get_cached_value(redis_client, sql)
-    else:
-        good_info = get_values_sql(sql)
-        ch_meth.set_cached_value(redis_client, good_info, sql)
+    good_info = ch_meth.set_or_get_cached_sql(sql, 15)
     if good_info is not None and len(good_info) > 0:
         good_info = good_info[0]
     else:
@@ -136,7 +132,7 @@ def get_goods(quantity: int, last_id: int = 0, params: str = None):
     else:
         sql += ')'
     if redis_client.exists(sql):
-        return ch_meth.get_cached_value(redis_client, sql)
+        return ch_meth.get_cached_value(sql)
     g_id_list = get_values_sql(sql)
     if isinstance(g_id_list, dict) and g_id_list.get('status') == -1:
         return g_id_list
@@ -145,7 +141,7 @@ def get_goods(quantity: int, last_id: int = 0, params: str = None):
     result = []
     for g_id in g_id_list:
         result.append(get_good(g_id.get('g_id')))
-    return ch_meth.set_cached_value(redis_client, result, sql)
+    return ch_meth.set_cached_value_by_minutes(result, sql, 15)
 
 
 def get_market_store(m_id: int, is_active: bool):
@@ -173,7 +169,6 @@ def get_market_store_on_mod(m_id: int):
 
 
 def add_good(good):
-    print(good)
     return get_values_sql(f"""select g_id from hp_insert_good({good.cat_id}, {good.b_id}, {good.gm_id}, 
                             '{good.gi_memo}', {good.gi_price}, {good.m_id}, '{good.gi_more_ref}')""")
 
@@ -202,7 +197,7 @@ def get_categories_levels():
 
 
 def get_models(cat_id: int = 0, b_id: int = 0):
-    value_arr = get_values_sql(f'select * from hp_get_models({cat_id}, {b_id})')
+    value_arr = ch_meth.set_or_get_cached_sql(f'select * from hp_get_models({cat_id}, {b_id})', 15)
     if value_arr:
         return {"models": value_arr}
     return None
@@ -221,27 +216,29 @@ def get_token(c_id, user_type, token):
 
 
 def get_brand(b_id: int):
-    return get_values_sql(f'select * from brands b where b.b_id = {b_id}')
+    return ch_meth.set_or_get_cached_sql(f'select * from brands b where b.b_id = {b_id}', 15)
+
+
+def get_sql_query(item_type: str, **kwargs) -> str:
+    sql_templates = {
+        'good_model': "execute procedure hp_insert_new_model('{item_type}', {cat_id}, {b_id}, '{name}', {c_id})",
+        'brands': "execute procedure hp_insert_new_brand('{item_type}', '{name}', {c_id})",
+        'categories': "execute procedure hp_insert_new_category('{item_type}', '{name}', '{parent_id}', {c_id})"
+    }
+    return sql_templates.get(item_type).format(item_type=item_type, **kwargs)
 
 
 def insert_new_item(item: models.NewItem):
-    if item.type == 'good_model':
-        return insert_values(f"""execute procedure hp_insert_new_model('{item.type}', {item.body.get('cat_id')}, 
-                                {item.body.get('b_id')}, '{item.body.get('name')}', {item.body.get('c_id')})""")
-    if item.type == 'brands':
-        return insert_values(f"""execute procedure hp_insert_new_brand('{item.type}', '{item.body.get('name')}', 
-                            {item.body.get('c_id')})""")
-    if item.type == 'categories':
-        return insert_values(f"""execute procedure hp_insert_new_category('{item.type}', '{item.body.get('name')}', 
-                            '{item.body.get('parent_id')}', {item.body.get('c_id')})""")
+    query = get_sql_query(item.type, **item.body)
+    return insert_values(query)
 
 
 def get_seller_add_apps(c_id: int):
-    return get_values_sql(f"""select * from hp_get_seller_add_app({c_id})""")
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_get_seller_add_app({c_id})""", 1)
 
 
 def get_seller_sell_apps(c_id: int):
-    return get_values_sql(f"""select * from hp_get_market_apps({c_id})""")
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_get_market_apps({c_id})""", 1)
 
 
 def delete_good_from_basket(c_id, g_id):
@@ -253,7 +250,7 @@ def clear_basket(c_id):
 
 
 def get_seller_markets(c_id: int):
-    return get_values_sql(f'''select * from hp_get_seller_markets({c_id})''')
+    return ch_meth.set_or_get_cached_sql(f'''select * from hp_get_seller_markets({c_id})''', 1)
 
 
 def upd_basket_qty(basket: models.Basket):
@@ -265,30 +262,35 @@ def create_waitlist(waitlist):
     c_id = waitlist.c_id
     obj_kind = waitlist.obj_kind
     obj_id_list = waitlist.obj_id_list
-    obj_id = None
-    if len(obj_id_list) == 1:
-        obj_id = obj_id_list[0]
-        res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {obj_id}, '{obj_kind}')''')
-        if type(res) != list:
-            return {'status': -1, 'err_msg': res.get('err_msg')}
-    else:
-        for g_id in obj_id_list:
-            res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {g_id}, '{obj_kind}')''')
+    if obj_kind != 'deals':
+        if len(obj_id_list) == 1:
+            obj_id = obj_id_list[0]
+            res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {obj_id}, '{obj_kind}')''')
             if type(res) != list:
                 return {'status': -1, 'err_msg': res.get('err_msg')}
+        else:
+            for g_id in obj_id_list:
+                res = get_values_sql(f'''select wl_id from hp_add_item_waitlist({c_id}, {g_id}, '{obj_kind}')''')
+                if type(res) != list:
+                    return {'status': -1, 'err_msg': res.get('err_msg')}
+    else:
+        obj_id = waitlist.obj_id_list[0]
+        res = get_values_sql(f'''select wl_id from hp_repeat_deal({c_id}, {obj_id})''')
+        if type(res) != list:
+            return {'status': -1, 'err_msg': res.get('err_msg')}
 
     return {'status': 0}
 
 
 def parent_category(cat_id: int):
-    res = get_values_sql(f'''select * from hp_get_parent_category({cat_id})''')
+    res = ch_meth.set_or_get_cached_sql(f'''select * from hp_get_parent_category({cat_id})''', 15)
     if res:
         return res[0]
     return res
 
 
 def get_app_result(al_id: int):
-    res = get_values_sql(f'''select * from hp_get_moderator_comment({al_id})''')
+    res = ch_meth.set_or_get_cached_sql(f'''select * from hp_get_moderator_comment({al_id})''', 15)
     if res:
         return res[0]
     return res
@@ -345,13 +347,11 @@ def get_waitlist(c_id: int):
 
 
 def get_waitlist_id(c_id: int):
-    result = get_values_sql(f"""select * from hp_get_waitlist_id({c_id});""")
-    if result:
-        return result[0]
+    return get_values_sql(f"""select * from hp_get_waitlist_id({c_id});""")
 
 
 def get_goods_by_wl_id(wl_id: int):
-    return get_values_sql(f"""select * from hp_get_good_by_wl_id({wl_id})""")
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_get_good_by_wl_id({wl_id})""", 15)
 
 
 def get_waitlist_seller(wl_id: int, c_id: int):
@@ -359,7 +359,7 @@ def get_waitlist_seller(wl_id: int, c_id: int):
 
 
 def market_good_from_wl(m_id: int, g_id_string: str):
-    return get_values_sql(f"""select * from hp_get_goods_from_wait_list('{m_id}', '{g_id_string}')""")
+    return get_values_sql(f"""select * from hp_get_goods_from_wait_list({m_id}, '{g_id_string}')""")
 
 
 def get_market_info(m_id: int):
@@ -447,8 +447,9 @@ def redact_market_contacts(mc):
 
 
 def get_all_goods():
-    return get_values_sql(f"""select g_id, gm_name, cat_name, b_name, gi_memo, gi_price, g_create_datetime, m_id, ci_id, mi_lat, mi_lon, 
-                                g_from_cat_id, g_from_b_id, gi_from_gm_id from hp_get_all_active_goods""")
+    return ch_meth.set_or_get_cached_sql(f"""select g_id, gm_name, cat_name, b_name, gi_memo, gi_price, 
+                                        g_create_datetime, m_id, ci_id, mi_lat, mi_lon, g_from_cat_id, g_from_b_id, 
+                                        gi_from_gm_id from hp_get_all_active_goods""", 15)
 
 
 def create_miniapp(c_id):
@@ -460,23 +461,23 @@ def create_miniapp(c_id):
 
 
 def fs_approve(type_act: str, result: models.ApproveAction):
-    procedure = ''
-    if type_act == 'good':
-        procedure = 'hp_approve_good'
-    if type_act == 'market':
-        procedure = 'hp_approve_market'
-    if type_act in ['category', 'brand', 'model']:
-        procedure = 'hp_approve_sort_types'
-    if type_act == 'review':
-        procedure = 'hp_approve_review'
-    if procedure == '':
+    procedure_dict = {
+        'good': 'hp_approve_good',
+        'market': 'hp_approve_market',
+        'category': 'hp_approve_sort_types',
+        'brand': 'hp_approve_sort_types',
+        'model': 'hp_approve_sort_types',
+        'review': 'hp_approve_review'
+    }
+    procedure = procedure_dict.get(type_act)
+    if not procedure:
         return {'status': -1, 'err_msg': 'Unknown procedure'}
     return get_values_sql(f"""select * from {procedure}({result.id}, {result.al_id}, {result.res_status}, 
                             {result.c_id}, '{result.memo}')""")
 
 
 def get_market_status(m_id: int):
-    return get_values_sql(f"""select * from hp_get_market_status({m_id})""")
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_get_market_status({m_id})""", 15)
 
 
 def get_seller_good_list(c_id: int):
@@ -506,7 +507,7 @@ def copy_to_store(good: models.MarketStore):
 
 
 def get_parent_images_id(g_id: int):
-    return get_values_sql(f"""select f_get_parent_img_id({g_id}, 'goods') from rdb$database""")
+    return ch_meth.set_or_get_cached_sql(f"""select f_get_parent_img_id({g_id}, 'goods') from rdb$database""", 15)
 
 
 def change_good_status_in_wl(params):
@@ -514,36 +515,41 @@ def change_good_status_in_wl(params):
 
 
 def get_city_name(ci_id: int):
-    return get_values_sql(f"""select * from hp_find_city_name({ci_id})""")
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_find_city_name({ci_id})""", 15)
 
 
 def seller_answer_deal(deal: models.Deal):
     try:
+        res = get_values_sql(f"""select cwl.clw_from_c_id as c_id, d.d_pay_type as pay_type from cli_waitlist cwl inner 
+                                    join deals d on d.d_from_wl_id = cwl.clw_from_wl_id and d.d_id = {deal.d_id}""")[0]
+
         for good in deal.result:
-            insert_values(f"""update deal_info set di_good_qty = {good.get('g_qty')}, 
-                        di_seller_status = {good.get('status')} where(di_from_d_id= {deal.d_id} and 
-                        di_from_g_id = {good.get('g_id')})""")
+            insert_values(f"""update deal_info set di_good_qty = {good.g_qty}, 
+                        di_seller_status = {good.status} where(di_from_d_id= {deal.d_id} and 
+                        di_from_g_id = {good.g_id})""")
         counter = get_values_sql(f"""select count(*) from deal_info di where di.di_from_d_id = {deal.d_id} and 
             di.di_seller_status = 0""")
         if counter[0].get('count') == 0:
             counter = get_values_sql(f"""select count(*) from deal_info di where di.di_from_d_id = 26 and 
                                     di.di_seller_status > -2""")
             if counter[0].get('count') > 0:
-                status = 1
+                status = 2 if res.get('pay_type') != 3 else 1
             else:
-                status = -1
+                status = -2 if res.get('pay_type') != 3 else -1
             insert_values(f"""update deals set d_status = {status} where (d_id = {deal.d_id})""")
     except Exception as err:
         return {'status': -1, 'err_msg': format(err)}
+    value = {"need_confirm": res.get('pay_type') == 3, "type": res.get('pay_type')}
+    ch_meth.set_cached_value(value, f"""deal_complete:{res.get("c_id")}:{deal.d_id}""")
     return {'status': 0}
 
 
 def parents_cats():
-    return get_values_sql("select * from hp_get_parents_cats")
+    return ch_meth.set_or_get_cached_sql("select * from hp_get_parents_cats", 15)
 
 
 def cities():
-    return get_values_sql("select * from hp_get_cities")
+    return ch_meth.set_or_get_cached_sql("select * from hp_get_cities", 15)
 
 
 def client_city(client: models.Client):
@@ -563,8 +569,8 @@ def find_city(city_name: str):
 
 def waitlist_client_result(result: models.WaitlistCliResult):
     if result.results and len(result.results) > 0:
-        counter = get_values_sql(f'''select count(*) from waitlist wl where wl_id = {result.wl_id} 
-                                            and wl_status not in (2, -2)''')
+        counter = get_values_sql(f'''select count(*) from waitlist wl where wl_id = {result.wl_id} and
+            wl_status not in (-2, 2)''')
         if counter:
             counter = counter[0].get('count')
             if counter == 0:
@@ -596,66 +602,66 @@ def client_deal(c_id: int):
     res = get_values_sql(f"""select * from hp_client_deal({c_id})""")
     if not res:
         return None
-    result = []
-
     d_id_dict = {}
-
     for item in res:
         d_id = item['d_id']
         m_id = item['m_id']
-        goods_info = {'g_id': item['g_id'], 'g_qty': item['g_qty'], 'seller_status': item['seller_status'],
-                      'client_status': item['client_status']}
 
         if d_id not in d_id_dict:
-            d_id_dict[d_id] = {}
-
-        if 'markets' not in d_id_dict[d_id]:
-            d_id_dict[d_id]['markets'] = {}
-
+            d_id_dict[d_id] = {
+                'd_id': d_id,
+                'd_status': item['d_status'],
+                'deal_info': {
+                    'pay_type': item['pay_type'],
+                    'pay_type_str': item['pay_type_str'],
+                    'delivery_type': item['delivery_type'],
+                    'delivery_type_str': item['delivery_type_str']
+                },
+                'markets': {}
+            }
         if m_id not in d_id_dict[d_id]['markets']:
-            d_id_dict[d_id]['markets'][m_id] = {'goods': []}
-
+            d_id_dict[d_id]['markets'][m_id] = {'m_id': m_id, 'goods': []}
+        goods_info = {
+            'g_id': item['g_id'],
+            'g_qty': item['g_qty'],
+            'seller_status': item['seller_status'],
+            'client_status': item['client_status']
+        }
         d_id_dict[d_id]['markets'][m_id]['goods'].append(goods_info)
-
-    for d_id, d_info in d_id_dict.items():
-        transformed_item = {'d_id': d_id, 'markets': []}
-
-        for m_id, m_info in d_info['markets'].items():
-            market_info = {'m_id': m_id, 'goods': m_info['goods']}
-            transformed_item['markets'].append(market_info)
-
+    result = []
+    for d_info in d_id_dict.values():
+        transformed_item = {
+            'd_id': d_info['d_id'],
+            'd_status': d_info['d_status'],
+            'deal_info': d_info['deal_info'],
+            'markets': list(d_info['markets'].values())
+        }
         result.append(transformed_item)
     return result
 
 
 def post_review(review: models.Rait):
-    return insert_values(f"""execute procedure hp_post_review({review.c_id}, '{review.rait_type}', {review.id}, 
-                    {review.rait}, '{review.review}')""")
+    sql = f"""execute procedure hp_post_review({review.c_id}, '{review.rait_type}', {review.id}, {review.rait}"""
+    sql += f", {review.review}" if review.review else ''
+    sql += ")"
+    return insert_values(sql)
 
 
 def get_market_rait(m_id: int):
-    sql = f"""select rait from hp_get_market_rait({m_id})"""
-    if redis_client.exists(sql):
-        return ch_meth.get_cached_value(redis_client, sql)
-    value = get_values_sql(sql)
-    if value:
-        return ch_meth.set_cached_value_by_minutes(redis_client, value, sql, 15)
+    return ch_meth.set_or_get_cached_sql(f"""select rait from hp_get_market_rait({m_id})""", 15)
 
 
 def get_reviews(obj_id: int, table_name: str):
-    sql = f"""select * from hp_get_reviews({obj_id}, '{table_name}')"""
-    if redis_client.exists(sql):
-        return ch_meth.get_cached_value(redis_client, sql)
-    value = get_values_sql(sql)
-    if value:
-        return ch_meth.set_cached_value_by_minutes(redis_client, value, sql, 15)
+    return ch_meth.set_or_get_cached_sql(f"""select * from hp_get_reviews({obj_id}, '{table_name}')""", 15)
 
 
-def get_deals_history(c_id: int, params: str = None):
+def get_deals_history(c_id: int, params: str = 'null'):
     sql = f"""select * from hp_get_deals_history({c_id}, '{params}')"""
     if redis_client.exists(sql):
-        return ch_meth.get_cached_value(redis_client, sql)
+        return ch_meth.get_cached_value(sql)
     value = get_values_sql(sql)
+    if not value:
+        return []
     d_id_list = []
     result = []
     for deal in value:
@@ -674,8 +680,24 @@ def get_deals_history(c_id: int, params: str = None):
                                              "hist_price": deal.get("hist_price")})
                     break
     if value:
-        return ch_meth.set_cached_value_by_minutes(redis_client, result, sql, 15)
+        return ch_meth.set_cached_value_by_minutes(result, sql, 15)
 
 
-def client_answer_deal(deal):
-    return None
+def client_answer_deal(data):
+    value = get_values_sql(f"""select * from hp_client_answer_deal('{data}')""")
+    if isinstance(value, list):
+        return value[0]
+    else:
+        return {'status': -1, 'err_msg': 'Произошла ошибка'}
+
+
+def get_active_markets():
+    return ch_meth.set_or_get_cached_sql("select * from hp_get_active_markets", 15)
+
+
+def post_report(report: models.Report):
+    try:
+        return insert_values(f"""execute procedure hp_ins_report({report.r_type}, '{report.r_message}', 
+                            {report.c_id})""")
+    except Exception as err:
+        return {'status': -1, 'err_msg': format(err)}

@@ -41,6 +41,7 @@ class CustomMinio:
         urls = []
         for item in objects:
             temp_dict = {
+                "g_id": g_id,
                 "image_ref": self.client.presigned_get_object(bucket_name=bucket_name, object_name=item.object_name),
                 "is_main": 1 if 'item_0' in item.object_name else 0}
             if only_main == 1 and temp_dict['is_main'] == 1:

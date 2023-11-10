@@ -31,11 +31,13 @@ minio_user = os.getenv('MINIO_USER')
 minio_password = os.getenv('MINIO_PASSWORD')
 # yandex
 yandex_api_key = os.getenv('YANDEX_API_KEY')
+# Goggle
+google_api_key = os.getenv('GOOGLE_API_KEY')
+# Mongo
+mongo_host = os.getenv('MONGO_HOST')
+mongo_port = os.getenv('MONGO_PORT')
 
 def_search_sort_types = '''{
 "date": 0,
 "price": 0
 }'''
-
-con = None
-con_fs = None

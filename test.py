@@ -1,6 +1,15 @@
-import redis
-import config as cfg
+import keyboard
+import time
 
-redis_client = redis.Redis(host=cfg.redis_url, port=cfg.redis_port, db=0)
+time.sleep(5)
+i = 0
+while i <= 50:
+    keyboard.write('Элина ван лав')
 
-print(redis_client.keys())
+    time.sleep(0.05)
+
+    keyboard.press_and_release('enter')
+
+    time.sleep(0.05)
+
+    i +=1

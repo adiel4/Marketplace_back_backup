@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "lateral-store-378710",
+  "private_key_id": "7571764fa948943eb7f2de5e017e37e6bd796cc5",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDLAoZPa15LD2gI\nLZQ3or7fF6GAWWbj10F8HnBWAL1iBYQS/nEtxiQ2j63orWsddJopRZsvi1m9IKg1\n40ZXFrH6+FT1x85sexZ2w41OUrODx35Gqp+BvvpXNTjwdvJgbZYEAhRayDfmU2Uc\nkibX0egKa3CuEGiNEmQP2u/OYmmqbsIS7EN5Zj8bNtSTeiVOr1jyfSkJ/upfv4TF\nB/VhJu6TqXmGpvbsGGS8UgOu3SM4w5MOHP8UP8R45AKP6fbjRPvfsWR6bfLv+K29\nbQuq4UkLFuSmNU0hYcFdbV8/hLwnfmgIEFwYKZPPSHZ7ZAPPUk52wtVnswvMjLig\niPGNN/49AgMBAAECggEACr4bdWBtIPOzwZsH2NnX195cQXp5o1zkrji+IQ7w9prs\nHkUwoAd4Kxr3TPTAUlK1RbHVQHLTUNrFi/R26GzfBjTV6hukpMDus2ItvBNMRJDt\n8bddsXP1s1+xn6frs4aZBaVGhndJ3fpTw2tIeus0qDh/QfbEUZLDkMM5JWa3yLjz\ndd4clJ1fH9NafVTIzt/ZFm5iXapjB4Cmz+PRBc2LFl7DVq8okTgL/+lxeX+WjAJV\nzBolKrF9jUnQei5G/bki/AfkFpIaZtVFv8rd8Wk+1VLtCFskf7eKyGh53hwHe4t0\n91/9iwVi5BgKZLql17D2qIWfBKOMl2yYZtKY8zekUQKBgQD7c1o1PtkQDN1j+5y2\n32XqoivmFPb/AhzvCtzWglh5MF+QOyYQKk3+7R5tBLfhe6c0oyKFrmcxgcMtMz+q\nPfyZI7qJRxtjwJBd7i4vmb0QXTmKUL25PhIXMxyuywLXfK1T4Cgjt4znTwVB4dWS\nClHhnULsgNcvboJp8CHXov/0qwKBgQDOrs7+9/iuhld/TmVkt0jX2j98iAU17gvT\nZh4PsSUz2BRXUv8JkjTmjPRMVZ6cHxNgmaKvXtvN0H6ZbBx7l/xy41F+5On2Kmlz\nKdkohYnGz2VMglXairoSseY5RR++52zxsgX5jsDZ3Q52rwjKxMtl8t9Q9zRZ7u5E\n/POqwlBItwKBgHJJNJf8z7We00UtSEZJ9U2WlfNGVhkDgdkYC9WnesTiOp0YdS1l\nvPuAFJMiUN04UX/4Iam24go7W1WA9I/RCq0j8xWP7yAAlt1Kc02JR8hXRt7Z4dF/\nJ8PJpGDBvrHoZfM4b6YEOBOt88rE9UgiTqMH0jIiQSu6w6WY0hjragBvAoGBALV0\nEXUVvXVzqmOxLyFiLIidKnmpbXGwgR9imufJ7VB71zfnPNNpUhpLC7vsu2hze+6m\nU4bFsBIchtkpakQz5kXzPrw6OxGMoLGjvuxteM1bjaLDFp7choodN3N2NW3D/gif\n89DqPHPJOIaIGx7x8WSa+uY5cfO26ecVcNOs7xE3AoGBAO9Jg/IkIRcLHvj/ee14\nZyIjZTokG+nWk8MwU5rRsCvhorfCr3HrbU0kvXmZnihEasf2GOrbBisL79EP7OD4\n/0waH9zF7p15U1DQ30zyCVjiJrL9jOXVmK62GosMJ+VgvVGIbyi1DoSJnhQiGbbk\n/hNOqZzarWO7v3YbYRRPcZaA\n-----END PRIVATE KEY-----\n",
+  "client_email": "marketplace-598@lateral-store-378710.iam.gserviceaccount.com",
+  "client_id": "105353399318806627746",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/marketplace-598%40lateral-store-378710.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

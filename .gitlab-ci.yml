@@ -3,7 +3,7 @@ test-deploy-marketplace-back:
   environment:
     name: test
   script:
-    - cd /opt/project/marketplace-back/ && git pull --rebase --autostash && sudo systemctl stop marketplace-back.service && sudo systemctl start marketplace-back.service; sleep 5 && tail -20 /var/log/marketplace-back/marketplace-back.err.log && sudo systemctl status marketplace-back.service
+    - cd /opt/project/marketplace-back/ && git pull --rebase --autostash && sudo systemctl stop marketplace-back.service && sudo systemctl start marketplace-back.service; sleep 30 && tail -20 /var/log/marketplace-back/marketplace-back.err.log && sudo systemctl status marketplace-back.service
   only:
     - test
   tags:

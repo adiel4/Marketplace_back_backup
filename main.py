@@ -1,3 +1,4 @@
+from init import app, minio_client, client_mongo, redis_client, cfg
 import base64
 import json
 import random
@@ -6,43 +7,20 @@ from uuid import uuid4
 from pyzbar.pyzbar import decode
 import uvicorn
 from PIL import Image
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from redis.exceptions import ConnectionError
 import isolated as iso
 import cache_methods as ch_meth
 import database as db
 import database_methods as db_meth
 import fs_database_methods as fs_db_meth
-import minio_client as mn_cli
 import models
 import image_methods
 import qr
 import yandex
 import geonames
-from init import redis_client
-from init import cfg
-
-app = FastAPI(
-    title='Marketplace'
-)
-
-origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://192.168.200.182",
-    "https://test-marketplace.mbulak.kg"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-
-minio_client = mn_cli.CustomMinio(secure=True)
+# import comment_analyze as ca
+import mongo_methods as mongo_meth
+from fastapi import Request
 
 
 @app.get("/")
@@ -69,37 +47,37 @@ async def put_item(process_name: str, item: models.Item):
 @app.get('/subcategories')
 async def get_subcategories(cat_id: int):
     if redis_client.exists(f'category:{str(cat_id)}:subcategories'):
-        return ch_meth.get_cached_value(redis_client, f'category:{str(cat_id)}:subcategories')
+        return ch_meth.get_cached_value(f'category:{str(cat_id)}:subcategories')
     value_arr = db_meth.get_subcategories(cat_id)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, f'category:{str(cat_id)}:subcategories')
+        return ch_meth.set_cached_value(value_arr, f'category:{str(cat_id)}:subcategories')
 
 
 @app.get("/categories")
 async def get_categories():
     if redis_client.exists('categories'):
-        return ch_meth.get_cached_value(redis_client, 'categories')
+        return ch_meth.get_cached_value('categories')
     value_arr = db_meth.get_categories()
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'categories')
+        return ch_meth.set_cached_value(value_arr, 'categories')
 
 
 @app.get("/all_categories")
 async def get_categories():
     if redis_client.exists('all_categories'):
-        return ch_meth.get_cached_value(redis_client, 'all_categories')
+        return ch_meth.get_cached_value('all_categories')
     value_arr = db_meth.get_categories(True)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'all_categories')
+        return ch_meth.set_cached_value(value_arr, 'all_categories')
 
 
 @app.get("/brands")
 async def get_brands():
     if redis_client.exists('brands'):
-        return ch_meth.get_cached_value(redis_client, 'brands')
+        return ch_meth.get_cached_value('brands')
     value_arr = db_meth.get_brands()
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'brands')
+        return ch_meth.set_cached_value(value_arr, 'brands')
 
 
 @app.post('/clear_cache')
@@ -120,10 +98,10 @@ async def clean_cache():
 @app.get("/get_good")
 async def get_good(g_id: int):
     if redis_client.exists(f'good:{g_id}'):
-        return ch_meth.get_cached_value(redis_client, f'good:{g_id}')
+        return ch_meth.get_cached_value(f'good:{g_id}')
     value_arr = db_meth.get_good(g_id)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, f'good:{g_id}')
+        return ch_meth.set_cached_value(value_arr, f'good:{g_id}')
 
 
 @app.get("/get_goods")
@@ -194,10 +172,10 @@ async def add_good_images(good_images: list):
 @app.get("/get_categories_levels")
 async def get_categories_levels():
     if redis_client.exists('cat_levels'):
-        return ch_meth.get_cached_value(redis_client, 'cat_levels')
+        return ch_meth.get_cached_value('cat_levels')
     value_arr = db_meth.get_categories_levels()
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'cat_levels')
+        return ch_meth.set_cached_value(value_arr, 'cat_levels')
 
 
 @app.post('/user_token')
@@ -206,20 +184,20 @@ async def get_user_token(user: models.User):
     c_id = user.c_id
     user_type = user.user_type
     if redis_client.exists(f'{c_id}_{user_type}'):
-        return ch_meth.get_cached_value(redis_client, f'{c_id}_{user_type}')
+        return ch_meth.get_cached_value(f'{c_id}_{user_type}')
     values = db_meth.get_token(c_id, user_type, token)
     if values:
         values['out_expire_datetime'] = values['out_expire_datetime'].strftime("%Y-%m-%d %H:%M:%S.%f")
-        return ch_meth.set_cached_value_by_days(redis_client, values, f'{c_id}_{user_type}', expire_days=7)
+        return ch_meth.set_cached_value_by_days(values, f'{c_id}_{user_type}', expire_days=7)
 
 
 @app.get('/user_info')
 async def user_info(c_id: int):
     if redis_client.exists(f'user_info:{c_id}'):
-        return ch_meth.get_cached_value(redis_client, f'user_info:{c_id}')
+        return ch_meth.get_cached_value(f'user_info:{c_id}')
     value = fs_db_meth.get_client_info(c_id)
     if value:
-        return ch_meth.set_cached_value_by_days(redis_client, value, f'user_info:{c_id}', expire_days=1)
+        return ch_meth.set_cached_value_by_days(value, f'user_info:{c_id}', expire_days=1)
 
 
 @app.post('/add_good_to_basket')
@@ -227,17 +205,17 @@ async def add_good_to_basket(c_id: int, good: models.Basket):
     values = db_meth.add_good_to_basket(good)
     basket_values = db_meth.get_basket_content(c_id)
     if basket_values:
-        ch_meth.set_cached_value(redis_client, basket_values, f'basket:{c_id}')
+        ch_meth.set_cached_value(basket_values, f'basket:{c_id}')
     return values
 
 
 @app.get('/get_basket_content')
 async def get_basket_content(c_id: int):
     if redis_client.exists(f'basket:{c_id}'):
-        return ch_meth.get_cached_value(redis_client, f'basket:{c_id}')
+        return ch_meth.get_cached_value(f'basket:{c_id}')
     value = db_meth.get_basket_content(c_id)
     if value:
-        return ch_meth.set_cached_value(redis_client, value, f'basket:{c_id}')
+        return ch_meth.set_cached_value(value, f'basket:{c_id}')
 
 
 @app.get("/brand")
@@ -248,10 +226,10 @@ async def get_brand(b_id: int):
 @app.get("/get_models")
 async def get_models(cat_id: int = 0, b_id: int = 0):
     if redis_client.exists(f'model:{cat_id}:{b_id}'):
-        return ch_meth.get_cached_value(redis_client, f'model:{cat_id}:{b_id}')
+        return ch_meth.get_cached_value(f'model:{cat_id}:{b_id}')
     value = db_meth.get_models(cat_id, b_id)
     if value:
-        return ch_meth.set_cached_value(redis_client, value, f'model:{cat_id}:{b_id}')
+        return ch_meth.set_cached_value(value, f'model:{cat_id}:{b_id}')
 
 
 @app.post("/insert_new_item")
@@ -276,7 +254,7 @@ async def get_seller_sell_apps(c_id: int):
 async def del_basket_good(delGood: models.DelGoodBasket):
     values = db_meth.delete_good_from_basket(delGood.c_id, delGood.g_id)
     basket_values = db_meth.get_basket_content(delGood.c_id)
-    ch_meth.set_cached_value(redis_client, basket_values, f'basket:{delGood.c_id}')
+    ch_meth.set_cached_value(basket_values, f'basket:{delGood.c_id}')
     return values
 
 
@@ -284,7 +262,7 @@ async def del_basket_good(delGood: models.DelGoodBasket):
 async def clear_basket(delGood: models.DelGoodBasket):
     values = db_meth.clear_basket(delGood.c_id)
     if values.get('status') == 0:
-        ch_meth.set_cached_value(redis_client, None, f'basket:{delGood.c_id}')
+        ch_meth.set_cached_value(None, f'basket:{delGood.c_id}')
     return values
 
 
@@ -339,10 +317,10 @@ async def read_notification(notification: models.Notifications):
 @app.get("/get_regions")
 async def get_regions(reg_id: int = 1000000):
     if redis_client.exists(f'reg_id:{reg_id}'):
-        return ch_meth.get_cached_value(redis_client, f'reg_id:{reg_id}')
+        return ch_meth.get_cached_value(f'reg_id:{reg_id}')
     value = fs_db_meth.get_regions(reg_id)
     if value:
-        return ch_meth.set_cached_value(redis_client, value, f'reg_id:{reg_id}')
+        return ch_meth.set_cached_value(value, f'reg_id:{reg_id}')
 
 
 @app.post("/create_miniapp")
@@ -353,32 +331,46 @@ async def create_miniapp(c_id: int):
 
 @app.get("/create_qr")
 async def create_qr(c_id: int):
-    if redis_client.exists(f'c_id:{c_id}:qr'):
-        return {key.encode('utf-8'): value for key, value in
-                ch_meth.get_cached_value(redis_client, f'c_id:{c_id}:qr').items()}
-    data = None
-    try:
-        data = db_meth.get_waitlist_id(c_id)
-    except Exception as err:
-        print(err)
-    if data is None:
+    if db_meth.get_waitlist_id(c_id) is None:
         return {'status': -1, 'err_msg': 'No active waitlist'}
-    json_value = str(data)
-    value = qr.save_qr(data=json_value, c_id=c_id)
+
+    value = qr.save_qr(c_id=c_id)
     qr_code = random.randint(10000000, 99999999)
     value['qr_code'] = qr_code
     if value:
-        ch_meth.set_cached_value_by_days(redis_client, value, f'qr_code:{qr_code}:qr', expire_days=1)
-        return ch_meth.set_cached_value_by_days(redis_client, value, f'c_id:{c_id}:qr', expire_days=1)
+        ch_meth.set_cached_value_by_days(value, f'qr_code:{qr_code}:qr', expire_days=1)
+        return ch_meth.set_cached_value_by_days(value, f'c_id:{c_id}:qr', expire_days=1)
+    # wl_id_list = db_meth.get_waitlist_id(c_id)
+    # if wl_id_list is None:
+    #     return {'status': -1, 'err_msg': 'No active waitlist'}
+    # data = ch_meth.get_cached_value(f'c_id:{c_id}:qr')
+    #
+    # try:
+    #     if redis_client.exists(f'c_id:{c_id}:qr'):
+    #         wl_id = None
+    #         if data:
+    #             wl_id = await scan_qr('qr', data.get('qr_base64'), 0, True)
+    #         if wl_id == wl_id_list:
+    #             return {key.encode('utf-8'): value for key, value in data.items()}
+    # except Exception as err:
+    #     print(format(err))
+    #
+    # if not data:
+    #     data = wl_id_list
+    # json_value = str(data)
+    # value = qr.save_qr(data=json_value, c_id=c_id)
+    # qr_code = random.randint(10000000, 99999999)
+    # value['qr_code'] = qr_code
+    # if value:
+    #     ch_meth.set_cached_value_by_days(value, f'qr_code:{qr_code}:qr', expire_days=1)
+    #     return ch_meth.set_cached_value_by_days(value, f'c_id:{c_id}:qr', expire_days=1)
 
 
 @app.get("/scan_qr")
-async def scan_qr(operation_type: str, data: str, m_id: int):
-    encrypted_data = None
-    cli_c = None
+async def scan_qr(operation_type: str, data: str, m_id: int, get_wl_id: bool = False):
     if operation_type.lower() == 'qr_code':
         if redis_client.exists(f'qr_code:{int(data)}:qr'):
-            decrypt_data = ch_meth.get_cached_value(redis_client, f'qr_code:{int(data)}:qr')
+            decrypt_data = ch_meth.get_cached_value(f'qr_code:{int(data)}:qr')
             data = decrypt_data['qr_base64']
             base64_qr_code = data
             base64_data = base64_qr_code.split(',')[1]
@@ -398,60 +390,77 @@ async def scan_qr(operation_type: str, data: str, m_id: int):
         try:
             cli_c = int(data[:13])
             encrypted_data = data[13:]
-        except Exception as err:
-            print(err)
+        except ValueError:
+            try:
+                base64_qr_code = data
+                base64_data = base64_qr_code.split(',')[1]
+                image_data = base64.b64decode(base64_data)
+                image_stream = BytesIO(image_data)
+                image = Image.open(image_stream)
+                decoded_qr_code = decode(image)
+                if decoded_qr_code:
+                    data = decoded_qr_code[0].data.decode('utf-8')
+                    cli_c = int(data[:13])
+                    encrypted_data = data[13:]
+                else:
+                    return {'status': -1, 'err_msg': "No QR code found in the image"}
+            except Exception as err:
+                return {'status': -1, 'err_msg': format(err)}
+        except Exception:
             return {'status': -1, 'err_msg': "Unknown QR"}
     else:
         return {'status': -1, 'err_msg': "Unknown operation type"}
     value = None
     if redis_client.exists(f'c_id:{cli_c}:qr'):
-        decrypt_data = ch_meth.get_cached_value(redis_client, f'c_id:{cli_c}:qr')
+        decrypt_data = ch_meth.get_cached_value(f'c_id:{cli_c}:qr')
     else:
         return {'status': -1, 'err_msg': "Unknown QR"}
-    decrypt_key = decrypt_data['key'].encode('utf-8')
-    if decrypt_key is None or decrypt_data is None:
-        return {'status': -1, 'err_msg': "Unknown QR"}
-    try:
-        value = qr.decrypt_data(encrypted_data, decrypt_key)
-    except Exception as err:
-        print(err)
-    datalist = json.loads(value.replace("'", "\""))
-    wl_id = datalist.get('wl_id')
-    g_id_data = db_meth.get_goods_by_wl_id(wl_id)
-    if g_id_data is None:
-        return {'status': -1, 'err_msg': "No goods in Waitlist"}
-    g_id_values = [int(item['g_id']) for item in g_id_data]
-    g_id_string = ','.join([str(item) for item in g_id_values])
-    market_goods = db_meth.market_good_from_wl(m_id, g_id_string)
-    if market_goods is None:
-        return {'status': -1, 'err_msg': "No goods for client"}
-    else:
-        d_id = g_id_data[0].get('d_id')
-        result = {'wl_id': datalist.get('wl_id'), 'd_id': d_id, 'goods': []}
-        for good in market_goods:
-            g_name = g_id_data[g_id_values.index(good.get('g_id'))].get('gm_name')
-            g_qty = g_id_data[g_id_values.index(good.get('g_id'))].get('wl_good_qty')
-            good = {'g_id': good.get('g_id'), 'g_name': g_name, 'g_qty': g_qty}
-            result.get('goods').append(good)
-        return result
+    # decrypt_key = decrypt_data['key'].encode('utf-8')
+    # if decrypt_key is None or decrypt_data is None:
+    #     return {'status': -1, 'err_msg': "Unknown QR"}
+    # try:
+    #     value = qr.decrypt_data(encrypted_data, decrypt_key)
+    # except Exception as err:
+    #     print(format(err))
+    # datalist = json.loads(value.replace("'", "\""))
+    datalist = db_meth.get_waitlist_id(cli_c)
+    if get_wl_id:
+        return datalist
+    result = []
+    for pre_res in datalist:
+        wl_id = pre_res.get('wl_id')
+        g_id_data = db_meth.get_goods_by_wl_id(wl_id)
+        if g_id_data and len(g_id_data) > 0:
+            g_id_values = [int(item['g_id']) for item in g_id_data]
+            g_id_string = ','.join([str(item) for item in g_id_values])
+            market_goods = db_meth.market_good_from_wl(m_id, g_id_string)
+            if market_goods is None:
+                continue
+            goods = []
+            for tmp_good in market_goods:
+                g_name = g_id_data[g_id_values.index(tmp_good.get('g_id'))].get('gm_name')
+                g_qty = g_id_data[g_id_values.index(tmp_good.get('g_id'))].get('wl_good_qty')
+                goods.append({'g_id': tmp_good.get('g_id'), 'g_name': g_name, 'g_qty': g_qty})
+            result.append({'wl_id': wl_id, 'd_id': pre_res.get('d_id'), 'goods': goods})
+    return result
 
 
 @app.get("/get_market_info")
 def get_market_info(m_id: int):
     if redis_client.exists(f'market_info:{m_id}'):
-        return ch_meth.get_cached_value(redis_client, f'market_info:{m_id}')
+        return ch_meth.get_cached_value(f'market_info:{m_id}')
     value_arr = db_meth.get_market_info(m_id)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, f'market_info:{m_id}')
+        return ch_meth.set_cached_value(value_arr, f'market_info:{m_id}')
 
 
 @app.get("/get_market_contacts")
 def get_market_contacts(m_id: int):
     if redis_client.exists(f'market_contacts:{m_id}'):
-        return ch_meth.get_cached_value(redis_client, f'market_contacts:{m_id}')
+        return ch_meth.get_cached_value(f'market_contacts:{m_id}')
     value_arr = db_meth.get_market_contacts(m_id)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, f'market_contacts:{m_id}')
+        return ch_meth.set_cached_value(value_arr, f'market_contacts:{m_id}')
 
 
 @app.post("/redact_market_info")
@@ -467,10 +476,10 @@ async def redact_market_contacts(mc: models.MarketContacts):
 @app.get("/get_region_name")
 async def get_region_name(reg_id: int):
     if redis_client.exists(f'reg_name:{reg_id}'):
-        return ch_meth.get_cached_value(redis_client, f'reg_name:{reg_id}')
+        return ch_meth.get_cached_value(f'reg_name:{reg_id}')
     value = fs_db_meth.get_region_name(reg_id)
     if value:
-        return ch_meth.set_cached_value(redis_client, value, f'reg_name:{reg_id}')
+        return ch_meth.set_cached_value(value, f'reg_name:{reg_id}')
 
 
 @app.post("/create_waitlist")
@@ -480,7 +489,7 @@ async def create_waitlist(waitlist: models.Waitlist):
     if basket_values is None:
         redis_client.delete(f'basket:{waitlist.c_id}')
     elif basket_values and type(basket_values) == list:
-        ch_meth.set_cached_value(redis_client, basket_values, f'basket:{waitlist.c_id}')
+        ch_meth.set_cached_value(basket_values, f'basket:{waitlist.c_id}')
     return res
 
 
@@ -499,7 +508,7 @@ async def upd_basket_qty(c_id: int, basket: models.Basket):
     res = db_meth.upd_basket_qty(basket)
     basket_values = db_meth.get_basket_content(c_id)
     if basket_values:
-        ch_meth.set_cached_value(redis_client, basket_values, f'basket:{c_id}')
+        ch_meth.set_cached_value(basket_values, f'basket:{c_id}')
     return res
 
 
@@ -575,10 +584,10 @@ async def get_address(coordinates: list):
 @app.get("/get_city_name")
 async def get_city_name(ci_id: int):
     if redis_client.exists(f'city_name:{ci_id}'):
-        return ch_meth.get_cached_value(redis_client, f'city_name:{ci_id}')
+        return ch_meth.get_cached_value(f'city_name:{ci_id}')
     value_arr = db_meth.get_city_name(ci_id)
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, f'city_name:{ci_id}')
+        return ch_meth.set_cached_value(value_arr, f'city_name:{ci_id}')
 
 
 @app.post('/set_good_status_in_wl')
@@ -593,26 +602,26 @@ async def seller_answer_deal(deal: models.Deal):
 
 
 @app.post("/client_answer_deal")
-async def client_answer_deal(deal: models.Deal):
-    return db_meth.client_answer_deal(deal)
+async def client_answer_deal(deal: dict = None):
+    return db_meth.client_answer_deal(str(deal).replace("'", '"'))
 
 
 @app.get("/parents_cats")
 async def parents_cats():
     if redis_client.exists('parents_cats'):
-        return ch_meth.get_cached_value(redis_client, 'parents_cats')
+        return ch_meth.get_cached_value('parents_cats')
     value_arr = db_meth.parents_cats()
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'parents_cats')
+        return ch_meth.set_cached_value(value_arr, 'parents_cats')
 
 
 @app.get("/cities")
 async def cities():
     if redis_client.exists('cities'):
-        return ch_meth.get_cached_value(redis_client, 'cities')
+        return ch_meth.get_cached_value('cities')
     value_arr = db_meth.cities()
     if value_arr:
-        return ch_meth.set_cached_value(redis_client, value_arr, 'cities')
+        return ch_meth.set_cached_value(value_arr, 'cities')
 
 
 @app.get("/get_current_city_geonames")
@@ -641,7 +650,17 @@ async def client_deal(c_id: int):
 
 
 @app.post("/post_review")
-async def post_review(review: models.Rait):
+async def post_review(review: models.Rait, ai_analyze: int = 1):
+    # if review.review and ai_analyze:
+    #     try:
+    #         response = await comment_analyze(review.review)
+    #         if response:
+    #             response = json.loads(response)
+    #             toxicity = response.get("attributeScores").get('TOXICITY').get('summaryScore').get('value')
+    #             if toxicity > 0.001:
+    #                 return {'status': -1, 'err_msg': 'Данные отзыв не прошел автомодерацию.'}
+    #     except Exception as e:
+    #         return {'status': -1, 'err_msg': format(e)}
     return db_meth.post_review(review)
 
 
@@ -656,17 +675,44 @@ async def get_reviews(obj_id: int, table_name: str):
 
 
 @app.get("/get_deals_history")
-async def get_deals_history(c_id: int, params: str = None):
+async def get_deals_history(c_id: int, params: str = 'null'):
     return db_meth.get_deals_history(c_id, params)
 
 
-if __name__ == '__main__':
-    cfg.con = db.Database().con
-    cfg.con_fs = db.FSDatabase().con
-    if not cfg.con_fs:
+@app.get("/get_active_markets")
+async def get_active_markets():
+    return db_meth.get_active_markets()
+
+
+# @app.get("/comment_analyze")
+# async def comment_analyze(comment: str):
+#     return ca.comment_analyze(comment)
+
+
+@app.post("/post_report")
+async def post_report(report: models.Report):
+    return db_meth.post_report(report)
+
+
+@app.post("/error_action")
+async def error_action(error: models.Error):
+    return mongo_meth.ins_or_upd_error_front(error.error)
+
+
+@app.get("/deal_need_confirm_by_client")
+async def deal_need_confirm_by_client(c_id: int, d_id: int):
+    return ch_meth.get_cached_value(f'deal_complete:{c_id}:{d_id}')
+
+
+@app.on_event("startup")
+def startup_app():
+    app.con = db.Database().con
+    app.con_fs = db.FSDatabase().con
+    app.db_errors = client_mongo
+    if not app.con_fs:
         print("Cannot connect to FS_DB")
         exit()
-    if cfg.con:
+    if app.con:
         if not minio_client.check_health():
             print('Error while connecting to minio')
             exit()
@@ -675,9 +721,39 @@ if __name__ == '__main__':
         except ConnectionError:
             print('Error while connecting to redis')
             exit()
-        # uvicorn.run(app, host='localhost', port=8000)
-        uvicorn.run(app, host=cfg.app_host, port=cfg.app_port)
-        redis_client.delete('goods')
-        iso.to_cache()
     else:
         print("Cannot connect to DB")
+        exit()
+
+
+@app.exception_handler(Exception)
+async def exception_handler(request: Request, exc: Exception):
+    method = request.method
+    url = request.url
+    headers = dict(request.headers)
+    body = None
+    try:
+        body = await request.body()
+    except Exception as err:
+        print(format(err))
+
+    error_info = {
+        "method": method,
+        "url": str(url),
+        "headers": headers,
+        "body": body.decode('utf-8') if body else body,
+        "exception": str(exc)
+    }
+    mongo_meth.ins_or_upd_error_front(error_info, True)
+
+
+@app.on_event("shutdown")
+def shutdown_app():
+    # Закрытие всех открытых коннектов
+    redis_client.delete('goods')
+    iso.to_cache()
+
+
+if __name__ == '__main__':
+    # uvicorn.run(app, host='localhost', port=8000)
+    uvicorn.run(app, host=cfg.app_host, port=cfg.app_port)

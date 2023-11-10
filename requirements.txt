@@ -47,3 +47,5 @@ uvicorn==0.22.0
 websocket-client==0.59.0
 pyzbar==0.1.9
 pandas==1.5.2
+google-api-python-client==2.100.0
+pymongo~=4.5.0

@@ -1,5 +1,4 @@
-from typing import List
-from typing import Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, AnyUrl
 
 
@@ -132,12 +131,18 @@ class MarketStore(BaseModel):
     g_id: int
 
 
+class DealSellerByGoodResult(BaseModel):
+    status: int
+    g_id: int
+    g_qty: int
+
+
 class Deal(BaseModel):
     d_id: Optional[int]
     m_id: int
     wl_id: Optional[int]
     status: Optional[int]
-    result: List
+    result: List[DealSellerByGoodResult]
 
 
 class Client(BaseModel):
@@ -160,3 +165,14 @@ class Rait(BaseModel):
     id: int
     rait: int
     review: Optional[str]
+
+
+class Report(BaseModel):
+    r_id: Optional[int]
+    r_type: int
+    r_message: str
+    c_id: int
+
+
+class Error(BaseModel):
+    error: Dict[str, Any]
